@@ -41,13 +41,13 @@ class LocationRepository(private val context: Context) {
                     provider,
                     1000L,
                     0f,
+                    ContextCompat.getMainExecutor(context),
                     object : android.location.LocationListener {
                         override fun onLocationChanged(loc: Location) { updateSnapshot(loc) }
                         override fun onProviderDisabled(provider: String) {}
                         override fun onProviderEnabled(provider: String) {}
                         override fun onStatusChanged(provider: String?, status: Int, extras: android.os.Bundle?) {}
-                    },
-                    ContextCompat.getMainExecutor(context)
+                    }
                 )
             } catch (_: SecurityException) {
             }
