@@ -10,10 +10,12 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Camera
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.Icon
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -95,10 +97,26 @@ class MainActivity : ComponentActivity() {
         val locationSnapshot by vm.location.collectAsState()
         var previewView by remember { mutableStateOf<PreviewView?>(null) }
         var cameraReady by remember { mutableStateOf(false) }
+        var showPermissionWarning by remember { mutableStateOf(false) }
+
+        // 检查权限状态
+        val camPermission = ContextCompat.checkSelfPermission(
+            context, Manifest.permission.CAMERA
+        ) == PackageManager.PERMISSION_GRANTED
+        if (!camPermission) {
+            showPermissionWarning = true
+        }
 
         // 相机生命周期：预览视图就绪后绑定
         DisposableEffect(Unit) {
-            val lifecycleOwner = context as LifecycleOwner
+            var lc: LifecycleOwner? = null
+            var c = context
+            while (c is android.content.ContextWrapper) {
+                if (c is LifecycleOwner) { lc = c; break }
+                c = c.baseContext
+            }
+            if (lc == null) return@DisposableEffect
+            val lifecycleOwner = lc
             val observer = LifecycleEventObserver { _, event ->
                 if (event == Lifecycle.Event.ON_RESUME) {
                     previewView?.let { startCamera(context, lifecycleOwner, it) }
@@ -119,6 +137,45 @@ class MainActivity : ComponentActivity() {
                 },
                 modifier = Modifier.fillMaxSize()
             )
+
+            // 权限警告遮罩
+            if (showPermissionWarning) {
+                Surface(
+                    Modifier.fillMaxSize(),
+                    color = Color.Black.copy(alpha = 0.85f)
+                ) {
+                    Column(
+                        Modifier.fillMaxSize().padding(32.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Icon(
+                            Icons.Default.Camera,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(64.dp)
+                        )
+                        Spacer(Modifier.size(16.dp))
+                        Text(
+                            "相机权限未授予",
+                            color = Color.White,
+                            style = MaterialTheme.typography.headlineSmall,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                        )
+                        Spacer(Modifier.size(8.dp))
+                        Text(
+                            "请在系统设置中允许 SiteStamp 使用相机权限，否则无法拍摄。",
+                            color = Color.Gray,
+                            style = MaterialTheme.typography.bodyMedium,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                        )
+                        Spacer(Modifier.size(24.dp))
+                        Button(onClick = { requestPermissionsIfNeeded() }) {
+                            Text("重新请求权限")
+                        }
+                    }
+                }
+            }
 
             // 顶部栏：项目名 + 切换
             TopAppBar(
