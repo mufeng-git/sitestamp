@@ -74,6 +74,7 @@ class LocationRepository(private val context: Context) {
                     provider,
                     1000L,
                     0f,
+                    ContextCompat.getMainExecutor(context),
                     object : android.location.LocationListener {
                         override fun onLocationChanged(loc: Location) {
                             Log.d("SiteStamp", "requestUpdate: location changed: ${loc.latitude}, ${loc.longitude}, acc=${loc.accuracy}")
@@ -87,8 +88,7 @@ class LocationRepository(private val context: Context) {
                         }
                         override fun onStatusChanged(provider: String?, status: Int, extras: android.os.Bundle?) {
                         }
-                    },
-                    ContextCompat.getMainExecutor(context)
+                    }
                 )
             } catch (_: SecurityException) {
                 Log.e("SiteStamp", "requestUpdate: SecurityException for provider $provider")
