@@ -47,9 +47,6 @@ class MainActivity : ComponentActivity() {
     private lateinit var imageCapture: ImageCapture
     private var cameraProvider: ProcessCameraProvider? = null
     private var locationRepo: com.cscec.sitestamp.core.LocationRepository? = null
-    private var projectName = ""
-    private var companyName = ""
-
     private var showProjectDialog by androidx.compose.runtime.mutableStateOf(false)
 
     private val permissionLauncher = registerForActivityResult(
@@ -110,8 +107,23 @@ class MainActivity : ComponentActivity() {
         ) == PackageManager.PERMISSION_GRANTED
         val showPermissionWarning = !camPermission
 
-        // 相机生命周期：预览视图就绪后绑定
-        DisposableEffect(Unit) {
+        var projectName by remember { mutableStateOf("") }
+        var companyName by remember { mutableStateOf("") }
+
+        // 相机生命周期：previewView 就绪 + ON_RESUME 时绑定
+        LaunchedEffect(previewView, context) {
+            if (previewView != null) {
+                val lifecycleOwner = context as? androidx.activity.ComponentActivity
+                if (lifecycleOwner != null) {
+                    if (lifecycleOwner.lifecycle.currentState == androidx.lifecycle.Lifecycle.State.RESUMED) {
+                        startCamera(context, lifecycleOwner, previewView!!)
+                    }
+                }
+            }
+        }
+
+        // 生命周期 observer：ON_RESUME 时绑定相机 + 刷新定位
+        DisposableEffect(context) {
             val lifecycleOwner = context as? androidx.activity.ComponentActivity
             if (lifecycleOwner != null) {
                 val observer = LifecycleEventObserver { _, event ->
