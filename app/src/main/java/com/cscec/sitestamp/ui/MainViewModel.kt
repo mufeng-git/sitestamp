@@ -7,16 +7,19 @@ import com.cscec.sitestamp.core.LocationRepository
 import com.cscec.sitestamp.core.PhotoRepository
 import com.cscec.sitestamp.core.WatermarkRenderer
 import com.cscec.sitestamp.data.AppDatabase
+import com.cscec.sitestamp.data.PhotoRecordDao
 import com.cscec.sitestamp.data.Project
 import com.cscec.sitestamp.data.ProjectDao
 import com.cscec.sitestamp.data.Template
 import com.cscec.sitestamp.data.TemplateDao
 import com.cscec.sitestamp.data.TemplateField
 import com.cscec.sitestamp.data.TemplateFieldDao
+import androidx.room.Room
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -32,7 +35,7 @@ data class CameraState(
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
 
-    private val db = AppDatabase.getInstance(app)
+    private val db: AppDatabase = AppDatabase.getInstance(app)
     private val projectDao: ProjectDao = db.projectDao()
     private val templateDao: TemplateDao = db.templateDao()
     private val fieldDao: TemplateFieldDao = db.templateFieldDao()
@@ -95,15 +98,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun switchProject(project: Project) {
-        projectDao.setDefault(false)
-        projectDao.insert(project.copy(id = 0, isDefault = true))
+        viewModelScope.launch(Dispatchers.IO) {
+            projectDao.setDefault(false)
+            projectDao.insert(project.copy(id = 0, isDefault = true))
+        }
     }
 
     fun switchTemplate(template: Template) {
-        templateDao.setDefault(template.id)
+        viewModelScope.launch(Dispatchers.IO) {
+            templateDao.setDefault(template.id)
+        }
         loadFields(template)
     }
-
     fun updateField(key: String, value: String) {
         _cameraState.value = _cameraState.value.copy(
             fieldValues = _cameraState.value.fieldValues.apply { put(key, value) }
@@ -142,7 +148,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun createProject(name: String, company: String) {
         viewModelScope.launch(Dispatchers.IO) {
             val now = System.currentTimeMillis()
-            val isFirst = projectDao.observeAll().value.isEmpty()
+            val isFirst = projectDao.observeAll().firstOrNull()?.isEmpty() ?: true
             val id = projectDao.insert(
                 Project(name = name, company = company, isDefault = isFirst, createdAt = now)
             )
@@ -153,7 +159,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun createTemplate(projectId: Long, name: String, fields: List<Pair<String, String>>) {
         viewModelScope.launch(Dispatchers.IO) {
             val tpl = Template(projectId = projectId, name = name, layoutConfig = "{}", styleConfig = "{}",
-                isDefault = templateDao.observeByProject(projectId).value.isEmpty(), sortOrder = 0)
+                isDefault = templateDao.observeByProject(projectId).firstOrNull()?.isEmpty() ?: true, sortOrder = 0)
             val tplId = templateDao.insert(tpl)
             val fieldList = fields.mapIndexed { i, (key, label) ->
                 TemplateField(templateId = tplId, fieldKey = key, label = label, sortOrder = i)

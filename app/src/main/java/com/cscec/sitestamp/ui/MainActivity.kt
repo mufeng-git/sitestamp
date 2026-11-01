@@ -101,7 +101,7 @@ class MainActivity : ComponentActivity() {
             val lifecycleOwner = context as LifecycleOwner
             val observer = LifecycleEventObserver { _, event ->
                 if (event == Lifecycle.Event.ON_RESUME) {
-                    previewView?.let { startCamera(context, lifecycleOwner) }
+                    previewView?.let { startCamera(context, lifecycleOwner, it) }
                 }
             }
             lifecycleOwner.lifecycle.addObserver(observer)
@@ -211,9 +211,8 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun startCamera(context: android.content.Context, lifecycleOwner: LifecycleOwner) {
+    private fun startCamera(context: android.content.Context, lifecycleOwner: LifecycleOwner, pv: PreviewView) {
         if (cameraProvider != null) return
-        val activity = context as ComponentActivity
         val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
         cameraProviderFuture.addListener({
             val provider = cameraProviderFuture.get()
@@ -222,7 +221,7 @@ class MainActivity : ComponentActivity() {
                 .setTargetAspectRatio(androidx.camera.core.AspectRatio.RATIO_4_3)
                 .build()
             val preview = Preview.Builder().build().also {
-                it.setSurfaceProvider(previewView?.surfaceProvider)
+                it.setSurfaceProvider(pv.surfaceProvider)
             }
             provider.unbindAll()
             provider.bindToLifecycle(

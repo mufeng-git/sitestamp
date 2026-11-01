@@ -33,7 +33,7 @@ class LocationRepository(private val context: Context) {
         if (!hasPermission()) return
         val lm = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
         val providers = lm.getProviders(true)
-        val loc = lm.getLastKnownLocation(providers) ?: return
+        val loc = providers.firstOrNull()?.let { lm.getLastKnownLocation(it) } ?: return
         updateSnapshot(loc)
         for (provider in providers) {
             try {

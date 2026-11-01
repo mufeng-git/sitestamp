@@ -102,7 +102,6 @@ object WatermarkRenderer {
         for ((size, text) in lines) {
             paint.textSize = size
             paint.color = if (size >= titleSize) Color.WHITE else Color.LTGRAY
-            val ts = Paint.TextMeasurer
             canvas.drawText(text, padX, y, paint)
             y += size * 1.5f
         }
