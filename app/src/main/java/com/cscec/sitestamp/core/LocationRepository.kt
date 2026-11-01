@@ -43,7 +43,7 @@ class LocationRepository(private val context: Context) {
         val gpsProvider = lm.getProvider(LocationManager.GPS_PROVIDER)
         if (gpsProvider != null) {
             try {
-                val gpsLast = lm.getLastKnownLocation(gpsProvider)
+                val gpsLast = lm.getLastKnownLocation(gpsProvider.name)
                 if (gpsLast != null) {
                     updateSnapshot(gpsLast)
                     Log.d("SiteStamp", "requestUpdate: got last GPS loc")
@@ -58,7 +58,7 @@ class LocationRepository(private val context: Context) {
         val netProvider = lm.getProvider(LocationManager.NETWORK_PROVIDER)
         if (netProvider != null) {
             try {
-                val netLast = lm.getLastKnownLocation(netProvider)
+                val netLast = lm.getLastKnownLocation(netProvider.name)
                 if (netLast != null) {
                     updateSnapshot(netLast)
                     Log.d("SiteStamp", "requestUpdate: got last network loc")
@@ -71,7 +71,7 @@ class LocationRepository(private val context: Context) {
         for (provider in providers) {
             try {
                 lm.requestLocationUpdates(
-                    provider,
+                    provider.name,
                     1000L,
                     0f,
                     object : android.location.LocationListener {
@@ -91,7 +91,7 @@ class LocationRepository(private val context: Context) {
                     ContextCompat.getMainExecutor(context)
                 )
             } catch (_: SecurityException) {
-                Log.e("SiteStamp", "requestUpdate: SecurityException for provider $provider")
+                Log.e("SiteStamp", "requestUpdate: SecurityException for provider ${provider.name}")
             }
         }
         Log.d("SiteStamp", "requestUpdate: location updates requested for ${providers.size} providers")
