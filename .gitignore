@@ -1,0 +1,21 @@
+# Built artifacts
+/build/
+/app/build/
+/*/build/
+
+# Gradle
+.gradle/
+local.properties
+gradle-app.setting
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
