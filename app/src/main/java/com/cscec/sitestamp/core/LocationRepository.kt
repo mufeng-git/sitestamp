@@ -7,6 +7,7 @@ import android.content.pm.PackageManager
 import android.location.Location
 import android.location.LocationManager
 import android.os.Bundle
+import android.util.Log
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -30,28 +31,70 @@ class LocationRepository(private val context: Context) {
 
     @SuppressLint("MissingPermission")
     fun requestUpdate() {
-        if (!hasPermission()) return
+        if (!hasPermission()) {
+            Log.d("SiteStamp", "requestUpdate: no permission")
+            return
+        }
         val lm = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
         val providers = lm.getProviders(true)
-        val loc = providers.firstOrNull()?.let { lm.getLastKnownLocation(it) } ?: return
-        updateSnapshot(loc)
+        Log.d("SiteStamp", "requestUpdate: providers=${providers.joinToString()}")
+
+        // 优先尝试 GPS provider
+        val gpsProvider = lm.getProvider(LocationManager.GPS_PROVIDER)
+        if (gpsProvider != null) {
+            try {
+                val gpsLast = lm.getLastKnownLocation(gpsProvider)
+                if (gpsLast != null) {
+                    updateSnapshot(gpsLast)
+                    Log.d("SiteStamp", "requestUpdate: got last GPS loc")
+                } else {
+                    Log.d("SiteStamp", "requestUpdate: no last GPS loc, will wait for update")
+                }
+            } catch (_: SecurityException) {
+            }
+        }
+
+        // 网络 provider 作为兜底
+        val netProvider = lm.getProvider(LocationManager.NETWORK_PROVIDER)
+        if (netProvider != null) {
+            try {
+                val netLast = lm.getLastKnownLocation(netProvider)
+                if (netLast != null) {
+                    updateSnapshot(netLast)
+                    Log.d("SiteStamp", "requestUpdate: got last network loc")
+                }
+            } catch (_: SecurityException) {
+            }
+        }
+
+        // 请求持续更新（GPS 优先）
         for (provider in providers) {
             try {
                 lm.requestLocationUpdates(
                     provider,
                     1000L,
                     0f,
-                    ContextCompat.getMainExecutor(context),
                     object : android.location.LocationListener {
-                        override fun onLocationChanged(loc: Location) { updateSnapshot(loc) }
-                        override fun onProviderDisabled(provider: String) {}
-                        override fun onProviderEnabled(provider: String) {}
-                        override fun onStatusChanged(provider: String?, status: Int, extras: android.os.Bundle?) {}
-                    }
+                        override fun onLocationChanged(loc: Location) {
+                            Log.d("SiteStamp", "requestUpdate: location changed: ${loc.latitude}, ${loc.longitude}, acc=${loc.accuracy}")
+                            updateSnapshot(loc)
+                        }
+                        override fun onProviderDisabled(provider: String) {
+                            Log.d("SiteStamp", "requestUpdate: provider disabled: $provider")
+                        }
+                        override fun onProviderEnabled(provider: String) {
+                            Log.d("SiteStamp", "requestUpdate: provider enabled: $provider")
+                        }
+                        override fun onStatusChanged(provider: String?, status: Int, extras: android.os.Bundle?) {
+                        }
+                    },
+                    ContextCompat.getMainExecutor(context)
                 )
             } catch (_: SecurityException) {
+                Log.e("SiteStamp", "requestUpdate: SecurityException for provider $provider")
             }
         }
+        Log.d("SiteStamp", "requestUpdate: location updates requested for ${providers.size} providers")
     }
 
     private fun updateSnapshot(loc: Location) {

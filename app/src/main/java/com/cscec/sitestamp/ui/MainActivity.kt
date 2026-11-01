@@ -49,7 +49,8 @@ class MainActivity : ComponentActivity() {
     private var locationRepo: com.cscec.sitestamp.core.LocationRepository? = null
     private var projectName = ""
     private var companyName = ""
-    private var showProjectDialog = false
+
+    private var showProjectDialog by androidx.compose.runtime.mutableStateOf(false)
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -337,24 +338,31 @@ class MainActivity : ComponentActivity() {
 
     private fun startCamera(context: android.content.Context, lifecycleOwner: LifecycleOwner, pv: PreviewView) {
         if (cameraProvider != null) return
+        android.util.Log.d("SiteStamp", "startCamera: beginning camera init")
         val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
         cameraProviderFuture.addListener({
-            val provider = cameraProviderFuture.get()
-            imageCapture = ImageCapture.Builder()
-                .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
-                .setTargetAspectRatio(androidx.camera.core.AspectRatio.RATIO_4_3)
-                .build()
-            val preview = Preview.Builder().build().also {
-                it.setSurfaceProvider(pv.surfaceProvider)
+            try {
+                val provider = cameraProviderFuture.get()
+                android.util.Log.d("SiteStamp", "startCamera: cameraProvider ready")
+                imageCapture = ImageCapture.Builder()
+                    .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
+                    .setTargetAspectRatio(androidx.camera.core.AspectRatio.RATIO_4_3)
+                    .build()
+                val preview = Preview.Builder().build().also {
+                    it.setSurfaceProvider(pv.surfaceProvider)
+                }
+                provider.unbindAll()
+                provider.bindToLifecycle(
+                    lifecycleOwner,
+                    CameraSelector.DEFAULT_BACK_CAMERA,
+                    preview,
+                    imageCapture
+                )
+                cameraProvider = provider
+                android.util.Log.d("SiteStamp", "startCamera: camera bound to lifecycle")
+            } catch (e: Exception) {
+                android.util.Log.e("SiteStamp", "startCamera: FAILED", e)
             }
-            provider.unbindAll()
-            provider.bindToLifecycle(
-                lifecycleOwner,
-                CameraSelector.DEFAULT_BACK_CAMERA,
-                preview,
-                imageCapture
-            )
-            cameraProvider = provider
         }, ContextCompat.getMainExecutor(context))
     }
 }
