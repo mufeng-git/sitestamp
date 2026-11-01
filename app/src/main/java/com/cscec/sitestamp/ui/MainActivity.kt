@@ -97,15 +97,11 @@ class MainActivity : ComponentActivity() {
         val locationSnapshot by vm.location.collectAsState()
         var previewView by remember { mutableStateOf<PreviewView?>(null) }
         var cameraReady by remember { mutableStateOf(false) }
-        var showPermissionWarning by remember { mutableStateOf(false) }
-
-        // 检查权限状态
+        // 权限状态直接驱动警告显示：授权后自动消失
         val camPermission = ContextCompat.checkSelfPermission(
             context, Manifest.permission.CAMERA
         ) == PackageManager.PERMISSION_GRANTED
-        if (!camPermission) {
-            showPermissionWarning = true
-        }
+        val showPermissionWarning = !camPermission
 
         // 相机生命周期：预览视图就绪后绑定
         DisposableEffect(Unit) {
