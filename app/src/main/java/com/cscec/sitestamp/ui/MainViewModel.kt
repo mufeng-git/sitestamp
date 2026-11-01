@@ -42,7 +42,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val photoDao = db.photoRecordDao()
 
     private val locationRepo = LocationRepository(app)
+    val locationRepoPublic = locationRepo
     private val photoRepo = PhotoRepository(app)
+    val photoRepoPublic = photoRepo
 
     val location = locationRepo.location
 

@@ -4,17 +4,19 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Camera
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -44,13 +46,17 @@ class MainActivity : ComponentActivity() {
 
     private lateinit var imageCapture: ImageCapture
     private var cameraProvider: ProcessCameraProvider? = null
+    private var locationRepo: com.cscec.sitestamp.core.LocationRepository? = null
+    private var projectName = ""
+    private var companyName = ""
+    private var showProjectDialog = false
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { result ->
         val granted = result.values.any { it }
-        if (!granted) {
-            // 权限被拒，UI 会提示
+        if (granted) {
+            locationRepo?.requestUpdate()
         }
     }
 
@@ -61,11 +67,11 @@ class MainActivity : ComponentActivity() {
             MaterialTheme {
                 val vm: MainViewModel = viewModel()
                 val context = LocalContext.current
+                locationRepo = com.cscec.sitestamp.core.LocationRepository(context)
 
                 Surface(modifier = Modifier.fillMaxSize(), color = androidx.compose.ui.graphics.Color.Black) {
                     Box(modifier = Modifier.fillMaxSize()) {
-                        CameraScreen(vm = vm, onSwitchToProjects = { /* TODO */ },
-                            onSwitchToPhotos = { /* TODO */ })
+                        CameraScreen(vm = vm, onSwitchToProjects = { showProjectDialog = true })
                     }
                 }
             }
@@ -89,7 +95,7 @@ class MainActivity : ComponentActivity() {
     }
 
     @Composable
-    private fun CameraScreen(vm: MainViewModel, onSwitchToProjects: () -> Unit, onSwitchToPhotos: () -> Unit) {
+    private fun CameraScreen(vm: MainViewModel, onSwitchToProjects: () -> Unit) {
         val context = LocalContext.current
         val cameraState by vm.cameraState.collectAsState()
         val projects by vm.projects.collectAsState()
@@ -110,6 +116,7 @@ class MainActivity : ComponentActivity() {
                 val observer = LifecycleEventObserver { _, event ->
                     if (event == Lifecycle.Event.ON_RESUME) {
                         previewView?.let { startCamera(context, lifecycleOwner, it) }
+                        locationRepo?.requestUpdate()
                     }
                 }
                 lifecycleOwner.lifecycle.addObserver(observer)
@@ -117,6 +124,41 @@ class MainActivity : ComponentActivity() {
             } else {
                 onDispose { }
             }
+        }
+
+        // 项目创建对话框
+        if (showProjectDialog) {
+            AlertDialog(
+                onDismissRequest = { showProjectDialog = false },
+                title = { Text("新建项目") },
+                text = {
+                    Column {
+                        TextField(
+                            value = projectName,
+                            onValueChange = { projectName = it },
+                            label = { Text("项目名称") },
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+                        )
+                        TextField(
+                            value = companyName,
+                            onValueChange = { companyName = it },
+                            label = { Text("公司名称") },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        vm.createProject(projectName, companyName)
+                        showProjectDialog = false
+                        projectName = ""
+                        companyName = ""
+                    }) { Text("创建") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showProjectDialog = false }) { Text("取消") }
+                }
+            )
         }
 
         Box(modifier = Modifier.fillMaxSize()) {
@@ -239,9 +281,9 @@ class MainActivity : ComponentActivity() {
             // 拍摄按钮
             FloatingActionButton(
                 onClick = {
-                    val result = vm.captureAndSave()
-                    if (result != null) {
-                        vm.recentPhotos()
+                    val act = context as? androidx.activity.ComponentActivity
+                    if (act != null && ::imageCapture.isInitialized) {
+                        takePhoto(act, vm)
                     }
                 },
                 modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
@@ -251,6 +293,45 @@ class MainActivity : ComponentActivity() {
                 Icon(Icons.Default.Camera, contentDescription = "拍摄")
             }
         }
+    }
+
+    private fun takePhoto(activity: ComponentActivity, vm: MainViewModel) {
+        val originalFile = vm.photoRepoPublic.createOriginalFile()
+        imageCapture.takePicture(
+            androidx.camera.core.ImageCapture.OutputFileOptions.Builder(
+                originalFile
+            ).build(),
+            object : ImageCapture.OnImageSavedCallback {
+                override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
+                    val state = vm.cameraState.value
+                    val project = state.currentProject ?: run {
+                        activity.runOnUiThread {
+                            Toast.makeText(activity, "请先创建并选择项目", Toast.LENGTH_LONG).show()
+                        }
+                        return
+                    }
+                    val data = WatermarkRenderer.WatermarkData(
+                        projectName = project.name,
+                        company = project.company,
+                        fields = state.currentFields
+                            .filter { it.isVisible }
+                            .map { it.fieldKey to (state.fieldValues[it.fieldKey] ?: "") },
+                        captureTime = WatermarkRenderer.nowTime(),
+                        gpsText = vm.locationRepoPublic.formatGps(vm.location.value),
+                        addressText = vm.locationRepoPublic.formatAddress(vm.location.value)
+                    )
+                    try {
+                        vm.photoRepoPublic.saveWatermarked(originalFile, data)
+                        Toast.makeText(activity, "照片已保存", Toast.LENGTH_SHORT).show()
+                    } catch (e: Exception) {
+                        Toast.makeText(activity, "保存失败：${e.message}", Toast.LENGTH_LONG).show()
+                    }
+                }
+                override fun onError(exc: ImageCaptureException) {
+                    Toast.makeText(activity, "拍摄失败：${exc.message}", Toast.LENGTH_LONG).show()
+                }
+            }
+        )
     }
 
     private fun startCamera(context: android.content.Context, lifecycleOwner: LifecycleOwner, pv: PreviewView) {
