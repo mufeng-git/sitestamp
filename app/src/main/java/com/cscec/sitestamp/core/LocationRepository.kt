@@ -6,7 +6,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.location.Location
 import android.location.LocationManager
-import android.os.Looper
+import android.os.Bundle
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -37,12 +37,18 @@ class LocationRepository(private val context: Context) {
         updateSnapshot(loc)
         for (provider in providers) {
             try {
-                lm.requestLocationUpdates(provider, 1000L, object : android.location.LocationListener {
-                    override fun onLocationChanged(loc: Location) { updateSnapshot(loc) }
-                    override fun onProviderDisabled(provider: String) {}
-                    override fun onProviderEnabled(provider: String) {}
-                    override fun onStatusChanged(provider: String?, status: Int, extras: android.os.Bundle?) {}
-                }, Looper.getMainLooper())
+                lm.requestLocationUpdates(
+                    provider,
+                    1000L,
+                    0f,
+                    object : android.location.LocationListener {
+                        override fun onLocationChanged(loc: Location) { updateSnapshot(loc) }
+                        override fun onProviderDisabled(provider: String) {}
+                        override fun onProviderEnabled(provider: String) {}
+                        override fun onStatusChanged(provider: String?, status: Int, extras: android.os.Bundle?) {}
+                    },
+                    ContextCompat.getMainExecutor(context)
+                )
             } catch (_: SecurityException) {
             }
         }
