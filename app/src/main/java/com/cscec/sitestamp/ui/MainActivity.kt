@@ -164,15 +164,7 @@ class MainActivity : ComponentActivity() {
                                 value = value,
                                 onValueChange = { vm.updateField(field.fieldKey, it) },
                                 label = { Text(field.label, color = Color.White) },
-                                modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
-                                colors = TextFieldDefaults.outlinedTextFieldColors(
-                                    focusedTextColor = Color.White,
-                                    unfocusedTextColor = Color.White,
-                                    focusedBorderColor = Color.White,
-                                    unfocusedBorderColor = Color.Gray,
-                                    focusedLabelColor = Color.White,
-                                    unfocusedLabelColor = Color.Gray
-                                )
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)
                             )
                         }
                     }
