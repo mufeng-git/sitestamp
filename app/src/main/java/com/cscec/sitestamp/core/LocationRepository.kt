@@ -35,9 +35,9 @@ class LocationRepository(private val context: Context) {
         val providers = lm.getProviders(true)
         val loc = lm.getLastKnownLocation(providers) ?: return
         updateSnapshot(loc)
-        for (p in providers) {
+        for (provider in providers) {
             try {
-                lm.requestLocationUpdates(p, 1000L, ::updateSnapshot, Looper.getMainLooper())
+                lm.requestLocationUpdates(provider, 1000L, ::updateSnapshot, Looper.getMainLooper())
             } catch (_: SecurityException) {
             }
         }
@@ -55,7 +55,7 @@ class LocationRepository(private val context: Context) {
     suspend fun resolveAddress(lat: Double, lng: Double): String? = withContext(Dispatchers.IO) {
         try {
             val geocoder = android.location.Geocoder(context, Locale.getDefault())
-            val list = geocoder.getFromLocation(lat, lng, 1)
+            val list = geocoder.getFromLocation(lat, lng, 1) ?: emptyList()
             list.firstOrNull()?.getAddressLine(0)?.takeIf { it.isNotBlank() }
         } catch (_: Exception) {
             null
