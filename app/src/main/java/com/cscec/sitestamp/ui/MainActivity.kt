@@ -109,8 +109,7 @@ class MainActivity : ComponentActivity() {
 
         // 相机生命周期：预览视图就绪后绑定
         DisposableEffect(Unit) {
-            val lifecycleOwner = (context as? androidx.activity.ComponentActivity)
-                ?: (context.baseContext as? androidx.activity.ComponentActivity)
+            val lifecycleOwner = context as? androidx.activity.ComponentActivity
             if (lifecycleOwner != null) {
                 val observer = LifecycleEventObserver { _, event ->
                     if (event == Lifecycle.Event.ON_RESUME) {
