@@ -301,6 +301,7 @@ class MainActivity : ComponentActivity() {
             androidx.camera.core.ImageCapture.OutputFileOptions.Builder(
                 originalFile
             ).build(),
+            ContextCompat.getMainExecutor(activity),
             object : ImageCapture.OnImageSavedCallback {
                 override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
                     val state = vm.cameraState.value
