@@ -71,7 +71,7 @@ class LocationRepository(private val context: Context) {
         for (provider in providers) {
             try {
                 lm.requestLocationUpdates(
-                    provider.name,
+                    provider,
                     1000L,
                     0f,
                     object : android.location.LocationListener {
@@ -91,7 +91,7 @@ class LocationRepository(private val context: Context) {
                     ContextCompat.getMainExecutor(context)
                 )
             } catch (_: SecurityException) {
-                Log.e("SiteStamp", "requestUpdate: SecurityException for provider ${provider.name}")
+                Log.e("SiteStamp", "requestUpdate: SecurityException for provider $provider")
             }
         }
         Log.d("SiteStamp", "requestUpdate: location updates requested for ${providers.size} providers")
