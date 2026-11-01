@@ -109,21 +109,19 @@ class MainActivity : ComponentActivity() {
 
         // 相机生命周期：预览视图就绪后绑定
         DisposableEffect(Unit) {
-            var lc: LifecycleOwner? = null
-            var c = context
-            while (c is android.content.ContextWrapper) {
-                if (c is LifecycleOwner) { lc = c; break }
-                c = c.baseContext
-            }
-            if (lc == null) return@DisposableEffect
-            val lifecycleOwner = lc
-            val observer = LifecycleEventObserver { _, event ->
-                if (event == Lifecycle.Event.ON_RESUME) {
-                    previewView?.let { startCamera(context, lifecycleOwner, it) }
+            val lifecycleOwner = (context as? androidx.activity.ComponentActivity)
+                ?: (context.baseContext as? androidx.activity.ComponentActivity)
+            if (lifecycleOwner != null) {
+                val observer = LifecycleEventObserver { _, event ->
+                    if (event == Lifecycle.Event.ON_RESUME) {
+                        previewView?.let { startCamera(context, lifecycleOwner, it) }
+                    }
                 }
+                lifecycleOwner.lifecycle.addObserver(observer)
+                onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+            } else {
+                onDispose { }
             }
-            lifecycleOwner.lifecycle.addObserver(observer)
-            onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
         }
 
         Box(modifier = Modifier.fillMaxSize()) {
