@@ -298,7 +298,6 @@ class MainActivity : ComponentActivity() {
     private fun takePhoto(activity: ComponentActivity, vm: MainViewModel) {
         val originalFile = vm.photoRepoPublic.createOriginalFile()
         imageCapture.takePicture(
-            ContextCompat.getMainExecutor(activity),
             androidx.camera.core.ImageCapture.OutputFileOptions.Builder(
                 originalFile
             ).build(),
