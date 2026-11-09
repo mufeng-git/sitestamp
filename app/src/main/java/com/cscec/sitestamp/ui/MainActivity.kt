@@ -21,6 +21,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
@@ -130,7 +131,7 @@ class MainActivity : ComponentActivity() {
                     onCreateProject = { name, company -> vm.createProject(name, company) },
                     onSelectTemplate = { vm.switchTemplate(it) },
                     onCreateTemplate = { name, labels -> vm.addTemplate(name, labels) },
-                    onDeleteTemplate = { vm.deleteTemplate(it) },
+                    onDeleteTemplate = { vm.deleteTemplate(it.id) },
                     onOpenGallery = { vm.refreshRecentPhotos() },
                     onDismissBanner = { vm.dismissBanner() },
                     onRequestPermission = { requestPermissionsIfNeeded() }
