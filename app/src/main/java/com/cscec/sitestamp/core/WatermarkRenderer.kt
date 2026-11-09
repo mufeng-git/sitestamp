@@ -14,6 +14,8 @@ import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.math.abs
+import kotlin.math.roundToLong
 
 /**
  * 水印渲染核心：在原始高分辨率照片上按比例绘制底部半透明信息块。
@@ -28,6 +30,8 @@ object WatermarkRenderer {
         val captureTime: String,
         val gpsText: String,
         val addressText: String,
+        val latitude: Double? = null,
+        val longitude: Double? = null,
         val showGps: Boolean = true,
         val showAddress: Boolean = true,
         val showTime: Boolean = true
@@ -46,7 +50,8 @@ object WatermarkRenderer {
         val opts = BitmapFactory.Options().apply {
             inSampleSize = calculateInSampleSize(bounds.outWidth, bounds.outHeight, 4096)
         }
-        var bitmap = BitmapFactory.decodeFile(originalFile.path, opts) ?: return
+        var bitmap = BitmapFactory.decodeFile(originalFile.path, opts)
+            ?: throw IllegalStateException("无法解码原图：${originalFile.path}")
         bitmap = rotateByExif(bitmap, originalFile)
 
         val width = bitmap.width
@@ -111,6 +116,48 @@ object WatermarkRenderer {
             bitmap.compress(Bitmap.CompressFormat.JPEG, 92, fos)
         }
         bitmap.recycle()
+
+        // 写入拍摄时间与 GPS（EXIF 度分秒有理数格式）
+        writeExif(outputFile, data)
+    }
+
+    private fun writeExif(file: File, data: WatermarkData) {
+        try {
+            val exif = ExifInterface(file.absolutePath)
+            val dateTime = toExifDateTime(data.captureTime)
+            exif.setAttribute(ExifInterface.TAG_DATETIME_ORIGINAL, dateTime)
+            exif.setAttribute(ExifInterface.TAG_DATETIME, dateTime)
+            val lat = data.latitude
+            val lng = data.longitude
+            if (lat != null && lng != null) {
+                exif.setAttribute(ExifInterface.TAG_GPS_LATITUDE, toDmsRational(lat))
+                exif.setAttribute(ExifInterface.TAG_GPS_LATITUDE_REF, if (lat >= 0) "N" else "S")
+                exif.setAttribute(ExifInterface.TAG_GPS_LONGITUDE, toDmsRational(lng))
+                exif.setAttribute(ExifInterface.TAG_GPS_LONGITUDE_REF, if (lng >= 0) "E" else "W")
+            }
+            exif.saveAttributes()
+        } catch (_: Exception) {
+            // EXIF 写入失败不影响照片本身已成功保存
+        }
+    }
+
+    private fun toExifDateTime(captureTime: String): String {
+        val outFormat = SimpleDateFormat("yyyy:MM:dd HH:mm:ss", Locale.US)
+        return try {
+            val parsed = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).parse(captureTime)
+            outFormat.format(parsed ?: Date())
+        } catch (_: Exception) {
+            outFormat.format(Date())
+        }
+    }
+
+    /** 十进制度转 EXIF 度/分/秒，形如 "31/1,14/1,5000/1000"。 */
+    private fun toDmsRational(value: Double): String {
+        val totalMillis = (abs(value) * 3_600_000).roundToLong()
+        val degrees = totalMillis / 3_600_000
+        val minutes = (totalMillis % 3_600_000) / 60_000
+        val secondsMillis = totalMillis % 60_000
+        return "$degrees/1,$minutes/1,$secondsMillis/1000"
     }
 
     private fun calculateInSampleSize(w: Int, h: Int, max: Int): Int {

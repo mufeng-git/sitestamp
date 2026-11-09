@@ -8,12 +8,14 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Camera
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
@@ -109,6 +111,7 @@ class MainActivity : ComponentActivity() {
 
         var projectName by remember { mutableStateOf("") }
         var companyName by remember { mutableStateOf("") }
+        var showCreateDialog by remember { mutableStateOf(false) }
 
         // 相机生命周期：previewView 就绪 + ON_RESUME 时绑定
         LaunchedEffect(previewView, context) {
@@ -139,10 +142,67 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        // 项目创建对话框
+        // 项目选择对话框：切换 / 删除
         if (showProjectDialog) {
             AlertDialog(
                 onDismissRequest = { showProjectDialog = false },
+                title = { Text("选择项目") },
+                text = {
+                    if (projects.isEmpty()) {
+                        Text("暂无项目，请先新建")
+                    } else {
+                        LazyColumn(modifier = Modifier.heightIn(max = 320.dp)) {
+                            items(projects, key = { it.id }) { project ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth()
+                                        .clickable {
+                                            vm.switchProject(project)
+                                            showProjectDialog = false
+                                        }
+                                        .padding(vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(project.name)
+                                        if (project.company.isNotBlank()) {
+                                            Text(
+                                                project.company,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = Color.Gray
+                                            )
+                                        }
+                                    }
+                                    if (project.isDefault) {
+                                        Text(
+                                            "默认",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                    IconButton(onClick = { vm.deleteProject(project.id) }) {
+                                        Icon(Icons.Default.Delete, contentDescription = "删除项目")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        showProjectDialog = false
+                        showCreateDialog = true
+                    }) { Text("新建项目") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showProjectDialog = false }) { Text("关闭") }
+                }
+            )
+        }
+
+        // 项目创建对话框
+        if (showCreateDialog) {
+            AlertDialog(
+                onDismissRequest = { showCreateDialog = false },
                 title = { Text("新建项目") },
                 text = {
                     Column {
@@ -163,13 +223,13 @@ class MainActivity : ComponentActivity() {
                 confirmButton = {
                     TextButton(onClick = {
                         vm.createProject(projectName, companyName)
-                        showProjectDialog = false
+                        showCreateDialog = false
                         projectName = ""
                         companyName = ""
                     }) { Text("创建") }
                 },
                 dismissButton = {
-                    TextButton(onClick = { showProjectDialog = false }) { Text("取消") }
+                    TextButton(onClick = { showCreateDialog = false }) { Text("取消") }
                 }
             )
         }
@@ -332,7 +392,9 @@ class MainActivity : ComponentActivity() {
                             .map { it.fieldKey to (state.fieldValues[it.fieldKey] ?: "") },
                         captureTime = WatermarkRenderer.nowTime(),
                         gpsText = vm.locationRepoPublic.formatGps(vm.location.value),
-                        addressText = vm.locationRepoPublic.formatAddress(vm.location.value)
+                        addressText = vm.locationRepoPublic.formatAddress(vm.location.value),
+                        latitude = vm.location.value.latitude,
+                        longitude = vm.location.value.longitude
                     )
                     try {
                         vm.photoRepoPublic.saveWatermarked(originalFile, data)

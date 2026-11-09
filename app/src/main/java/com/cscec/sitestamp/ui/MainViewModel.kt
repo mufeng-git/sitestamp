@@ -59,6 +59,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     init {
         observeData()
+        observeLocation()
         locationRepo.requestUpdate()
     }
 
@@ -67,9 +68,24 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             projectDao.observeAll().collect {
                 _projects.value = it
                 val def = it.firstOrNull { p -> p.isDefault } ?: it.firstOrNull()
-                if (def != null && def.id != _cameraState.value.currentProject?.id) {
-                    loadTemplates(def.id)
+                if (def != null) {
+                    val changed = def.id != _cameraState.value.currentProject?.id
+                    _cameraState.value = _cameraState.value.copy(currentProject = def)
+                    if (changed) loadTemplates(def.id)
+                } else {
+                    _cameraState.value = _cameraState.value.copy(currentProject = null)
                 }
+            }
+        }
+    }
+
+    private fun observeLocation() {
+        viewModelScope.launch {
+            locationRepo.location.collect { snapshot ->
+                _cameraState.value = _cameraState.value.copy(
+                    gpsText = locationRepo.formatGps(snapshot),
+                    addressText = locationRepo.formatAddress(snapshot)
+                )
             }
         }
     }
@@ -101,8 +117,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun switchProject(project: Project) {
         viewModelScope.launch(Dispatchers.IO) {
-            projectDao.setDefault(false)
-            projectDao.insert(project.copy(id = 0, isDefault = true))
+            // 原地切换默认标记，避免复制项目造成重复数据
+            projectDao.setDefaultOnly(project.id)
         }
     }
 
@@ -127,6 +143,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val project = state.currentProject ?: return null
         val template = state.currentTemplate ?: return null
         val originalFile = photoRepo.createOriginalFile()
+        val snapshot = location.value
 
         val data = WatermarkRenderer.WatermarkData(
             projectName = project.name,
@@ -135,8 +152,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 .filter { it.isVisible }
                 .map { it.fieldKey to (state.fieldValues[it.fieldKey] ?: "") },
             captureTime = WatermarkRenderer.nowTime(),
-            gpsText = locationRepo.formatGps(location.value),
-            addressText = locationRepo.formatAddress(location.value)
+            gpsText = locationRepo.formatGps(snapshot),
+            addressText = locationRepo.formatAddress(snapshot),
+            latitude = snapshot.latitude,
+            longitude = snapshot.longitude
         )
 
         return try {
