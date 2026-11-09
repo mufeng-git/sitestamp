@@ -104,7 +104,7 @@ object WatermarkRenderer {
         val metaSize = unit * 0.84f
 
         val padH = w * 0.030f
-        val padV = h * 0.0132f
+        val padV = h * 0.0190f
         val barW = w * 0.0072f
         val radius = w * 0.018f
         val marginX = w * 0.026f
@@ -154,7 +154,7 @@ object WatermarkRenderer {
                 labelColW = max(labelColW, measure.measureText(row.label))
             }
         }
-        if (labelColW > 0f) labelColW += unit * 0.85f
+        if (labelColW > 0f) labelColW += unit * 1.25f
         val valueMaxW = max(textMaxW - labelColW, textMaxW * 0.45f)
 
         // ---- 逐行换行并累计内容高度
@@ -164,14 +164,14 @@ object WatermarkRenderer {
             when (row.kind) {
                 KIND_DIVIDER -> {
                     drawn.add(row to emptyList())
-                    contentH += unit * 0.95f
+                    contentH += unit * 1.10f
                 }
                 KIND_FIELD -> {
                     measure.textSize = row.size
                     measure.typeface = mediumFace
                     val lines = wrap(row.text, valueMaxW, measure)
                     drawn.add(row to lines)
-                    contentH += row.size * 1.30f + (lines.size - 1) * row.size * 1.42f
+                    contentH += row.size * 1.46f + (lines.size - 1) * row.size * 1.52f
                 }
                 else -> {
                     measure.textSize = row.size
@@ -179,7 +179,7 @@ object WatermarkRenderer {
                         if (row.kind == KIND_TITLE || row.kind == KIND_TIME) boldFace else normalFace
                     val lines = wrap(row.text, textMaxW, measure)
                     drawn.add(row to lines)
-                    contentH += row.size * 1.34f + (lines.size - 1) * row.size * 1.42f
+                    contentH += row.size * 1.52f + (lines.size - 1) * row.size * 1.52f
                 }
             }
         }
@@ -246,16 +246,16 @@ object WatermarkRenderer {
         for ((row, lines) in drawn) {
             when (row.kind) {
                 KIND_DIVIDER -> {
-                    val dy = y + unit * 0.475f
+                    val dy = y + unit * 0.55f
                     canvas.drawLine(contentX, dy, cardRight - padH, dy, divPaint)
-                    y += unit * 0.95f
+                    y += unit * 1.10f
                 }
                 KIND_FIELD -> {
                     if (row.label.isNotEmpty()) {
                         textPaint.textSize = labelSize
                         textPaint.typeface = mediumFace
                         textPaint.color = SECONDARY
-                        canvas.drawText(row.label, contentX, y + labelSize, textPaint)
+                        canvas.drawText(row.label, contentX, y + row.size, textPaint)
                     }
                     textPaint.textSize = row.size
                     textPaint.typeface = mediumFace
@@ -263,9 +263,9 @@ object WatermarkRenderer {
                     var vy = y + row.size
                     for (line in lines) {
                         canvas.drawText(line, contentX + labelColW, vy, textPaint)
-                        vy += row.size * 1.42f
+                        vy += row.size * 1.52f
                     }
-                    y += row.size * 1.30f + (lines.size - 1) * row.size * 1.42f
+                    y += row.size * 1.46f + (lines.size - 1) * row.size * 1.52f
                 }
                 else -> {
                     val isBold = row.kind == KIND_TITLE || row.kind == KIND_TIME
@@ -275,9 +275,9 @@ object WatermarkRenderer {
                     var ty = y + row.size
                     for (line in lines) {
                         canvas.drawText(line, contentX, ty, textPaint)
-                        ty += row.size * 1.42f
+                        ty += row.size * 1.52f
                     }
-                    y += row.size * 1.34f + (lines.size - 1) * row.size * 1.42f
+                    y += row.size * 1.52f + (lines.size - 1) * row.size * 1.52f
                 }
             }
         }
