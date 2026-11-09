@@ -21,4 +21,14 @@ interface TemplateDao {
 
     @Query("UPDATE templates SET isDefault = 1 WHERE id = :id")
     suspend fun setDefault(id: Long)
+
+    @Query("SELECT COUNT(*) FROM templates WHERE projectId = :projectId")
+    suspend fun countByProject(projectId: Long): Int
+
+    @Query("DELETE FROM templates WHERE projectId = :projectId")
+    suspend fun deleteByProject(projectId: Long)
+
+    /** 项目内互斥：只有一个模板是默认模板 */
+    @Query("UPDATE templates SET isDefault = CASE WHEN id = :id THEN 1 ELSE 0 END WHERE projectId = :projectId")
+    suspend fun setDefaultExclusive(projectId: Long, id: Long)
 }

@@ -50,9 +50,10 @@ object WatermarkRenderer {
         val opts = BitmapFactory.Options().apply {
             inSampleSize = calculateInSampleSize(bounds.outWidth, bounds.outHeight, 4096)
         }
-        var bitmap = BitmapFactory.decodeFile(originalFile.path, opts)
+        val decoded = BitmapFactory.decodeFile(originalFile.path, opts)
             ?: throw IllegalStateException("无法解码原图：${originalFile.path}")
-        bitmap = rotateByExif(bitmap, originalFile)
+        val bitmap = rotateByExif(decoded, originalFile)
+        if (bitmap !== decoded) decoded.recycle()
 
         val width = bitmap.width
         val height = bitmap.height

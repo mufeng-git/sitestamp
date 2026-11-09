@@ -15,4 +15,7 @@ interface TemplateFieldDao {
 
     @Query("DELETE FROM template_fields WHERE templateId = :templateId")
     suspend fun deleteByTemplate(templateId: Long)
+
+    @Query("DELETE FROM template_fields WHERE templateId IN (SELECT id FROM templates WHERE projectId = :projectId)")
+    suspend fun deleteByProject(projectId: Long)
 }
