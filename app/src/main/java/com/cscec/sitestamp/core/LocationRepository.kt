@@ -9,10 +9,13 @@ import android.location.LocationManager
 import android.os.Bundle
 import android.util.Log
 import androidx.core.content.ContextCompat
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.Locale
 
@@ -28,6 +31,12 @@ class LocationRepository(private val context: Context) {
 
     private val _location = MutableStateFlow(LocationSnapshot())
     val location: StateFlow<LocationSnapshot> = _location.asStateFlow()
+
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+
+    // 上一次发起 Geocoder 请求的坐标，位移不足 50 米时不重复请求（Geocoder 有配额）
+    private var lastGeocodedLat: Double? = null
+    private var lastGeocodedLng: Double? = null
 
     @SuppressLint("MissingPermission")
     fun requestUpdate() {
@@ -102,8 +111,29 @@ class LocationRepository(private val context: Context) {
             latitude = loc.latitude,
             longitude = loc.longitude,
             accuracy = loc.accuracy,
+            address = _location.value.address,
             isValid = true
         )
+        resolveAddressIfNeeded(loc)
+    }
+
+    private fun resolveAddressIfNeeded(loc: Location) {
+        val prevLat = lastGeocodedLat
+        val prevLng = lastGeocodedLng
+        if (prevLat != null && prevLng != null) {
+            val distance = FloatArray(1)
+            Location.distanceBetween(prevLat, prevLng, loc.latitude, loc.longitude, distance)
+            if (distance[0] < ADDRESS_MIN_MOVE_METERS) return
+        }
+        // 先记录本次请求坐标，后续未移动足够距离的更新直接跳过
+        lastGeocodedLat = loc.latitude
+        lastGeocodedLng = loc.longitude
+        scope.launch {
+            val address = resolveAddress(loc.latitude, loc.longitude)
+            if (address != null) {
+                _location.value = _location.value.copy(address = address)
+            }
+        }
     }
 
     suspend fun resolveAddress(lat: Double, lng: Double): String? = withContext(Dispatchers.IO) {
@@ -134,5 +164,9 @@ class LocationRepository(private val context: Context) {
 
     fun formatAddress(snapshot: LocationSnapshot): String {
         return snapshot.address?.takeIf { it.isNotBlank() } ?: "地址：不可用"
+    }
+
+    private companion object {
+        const val ADDRESS_MIN_MOVE_METERS = 50f
     }
 }

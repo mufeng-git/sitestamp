@@ -2,6 +2,7 @@ package com.cscec.sitestamp.core
 
 import android.content.ContentValues
 import android.content.Context
+import android.media.MediaScannerConnection
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
@@ -45,23 +46,83 @@ class PhotoRepository(private val context: Context) {
 
         val outputFile = if (success) watermarkedFile else originalFile
 
-        // 保存到系统相册
-        val values = ContentValues().apply {
-            put(MediaStore.Images.Media.DISPLAY_NAME, originalFile.name)
-            put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/SiteStamp")
-            }
+        // 原图与水印图双存进系统相册；水印失败时只保留原图，避免重复
+        val originalUri = saveToGallery(originalFile, originalFile.name)
+        val watermarkedUri = if (success) {
+            saveToGallery(watermarkedFile, watermarkDisplayName(originalFile.name))
+        } else {
+            originalUri
         }
-        val resolver = context.contentResolver
-        val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
-        uri?.let { resolver.openOutputStream(it)?.use { fos -> watermarkedFile.inputStream().copyTo(fos) } }
 
         return SaveResult(
-            originalUri = originalFile.absolutePath,
-            watermarkedUri = uri?.toString() ?: outputFile.absolutePath,
+            originalUri = originalUri ?: originalFile.absolutePath,
+            watermarkedUri = watermarkedUri ?: outputFile.absolutePath,
             originalFile = originalFile,
             watermarkedFile = outputFile
         )
+    }
+
+    private fun watermarkDisplayName(originalName: String): String {
+        val dot = originalName.lastIndexOf('.')
+        return if (dot > 0) {
+            originalName.substring(0, dot) + "_wm" + originalName.substring(dot)
+        } else {
+            originalName + "_wm"
+        }
+    }
+
+    /**
+     * 写入系统相册：API 29+ 走 MediaStore，API 28- 写公共 Pictures/SiteStamp
+     * 并通过 MediaScanner 通知图库。失败返回 null，不影响其余流程。
+     */
+    private fun saveToGallery(file: File, displayName: String): String? {
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                saveToMediaStore(file, displayName)
+            } else {
+                saveToPublicPictures(file, displayName)
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun saveToMediaStore(file: File, displayName: String): String? {
+        val resolver = context.contentResolver
+        val values = ContentValues().apply {
+            put(MediaStore.Images.Media.DISPLAY_NAME, displayName)
+            put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+            put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/SiteStamp")
+            put(MediaStore.Images.Media.IS_PENDING, 1)
+        }
+        val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values) ?: return null
+        try {
+            val stream = resolver.openOutputStream(uri)
+            if (stream == null) {
+                resolver.delete(uri, null, null)
+                return null
+            }
+            stream.use { fos -> file.inputStream().use { it.copyTo(fos) } }
+            val done = ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) }
+            resolver.update(uri, done, null, null)
+            return uri.toString()
+        } catch (e: Exception) {
+            resolver.delete(uri, null, null)
+            throw e
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun saveToPublicPictures(file: File, displayName: String): String? {
+        val dir = File(
+            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES),
+            "SiteStamp"
+        ).apply { if (!exists()) mkdirs() }
+        val dest = File(dir, displayName)
+        file.inputStream().use { input ->
+            dest.outputStream().use { output -> input.copyTo(output) }
+        }
+        MediaScannerConnection.scanFile(context, arrayOf(dest.absolutePath), arrayOf("image/jpeg"), null)
+        return dest.absolutePath
     }
 }

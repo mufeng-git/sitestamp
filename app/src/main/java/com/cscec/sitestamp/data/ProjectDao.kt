@@ -21,4 +21,8 @@ interface ProjectDao {
 
     @Query("UPDATE projects SET isDefault = :isDefault")
     suspend fun setDefault(isDefault: Boolean)
+
+    /** 原地更新默认标记：仅 id 对应的项目为默认，且保证互斥。 */
+    @Query("UPDATE projects SET isDefault = CASE WHEN id = :id THEN 1 ELSE 0 END")
+    suspend fun setDefaultOnly(id: Long)
 }
