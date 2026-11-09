@@ -1,12 +1,14 @@
 package com.cscec.sitestamp.ui
 
 import android.app.Application
+import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.cscec.sitestamp.core.LocationRepository
 import com.cscec.sitestamp.core.PhotoRepository
 import com.cscec.sitestamp.core.WatermarkRenderer
 import com.cscec.sitestamp.data.AppDatabase
+import com.cscec.sitestamp.data.FieldPresets
 import com.cscec.sitestamp.data.PhotoRecord
 import com.cscec.sitestamp.data.Project
 import com.cscec.sitestamp.data.ProjectDao
@@ -23,6 +25,18 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
+/**
+ * 拍摄反馈状态：驱动快门动画、保存遮罩和结果胶囊。
+ * [bannerSeq] 每次自增，UI 用它触发一次性提示动画，避免同文案不刷新。
+ */
+data class CaptureFeedback(
+    val isSaving: Boolean = false,
+    val lastThumb: String? = null,
+    val banner: String? = null,
+    val bannerOk: Boolean = true,
+    val bannerSeq: Long = 0L
+)
+
 data class CameraState(
     val currentProject: Project? = null,
     val currentTemplate: Template? = null,
@@ -30,7 +44,9 @@ data class CameraState(
     val fieldValues: MutableMap<String, String> = mutableMapOf(),
     val gpsText: String = "定位未获取",
     val addressText: String = "地址：正在解析",
-    val captureTime: String = ""
+    val captureTime: String = "",
+    val recentValues: Map<String, List<String>> = emptyMap(),
+    val feedback: CaptureFeedback = CaptureFeedback()
 )
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
@@ -45,6 +61,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val locationRepoPublic = locationRepo
     private val photoRepo = PhotoRepository(app)
     val photoRepoPublic = photoRepo
+
+    /** 最近使用过的字段值，现场同一个区域会连拍十几张，避免每次都翻选项。 */
+    private val recentPrefs = app.getSharedPreferences("sitestamp_recent", Context.MODE_PRIVATE)
 
     val location = locationRepo.location
 
@@ -64,7 +83,67 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         observeData()
         observeLocation()
         startClock()
+        loadRecentValues()
         locationRepo.requestUpdate()
+    }
+
+    // ------------------------------------------------------------ 字段快捷选项
+
+    private fun loadRecentValues() {
+        val map = HashMap<String, List<String>>()
+        recentPrefs.all.forEach { (key, raw) ->
+            if (key.startsWith(PREFIX_RECENT) && raw is String) {
+                val values = raw.split(SEP).filter { it.isNotBlank() }
+                if (values.isNotEmpty()) map[key.removePrefix(PREFIX_RECENT)] = values
+            }
+        }
+        _cameraState.value = _cameraState.value.copy(recentValues = map)
+    }
+
+    private fun rememberValue(fieldKey: String, value: String) {
+        val trimmed = value.trim()
+        if (trimmed.isEmpty()) return
+        val current = _cameraState.value.recentValues[fieldKey].orEmpty()
+        val updated = (listOf(trimmed) + current.filter { it != trimmed }).take(6)
+        recentPrefs.edit()
+            .putString(PREFIX_RECENT + fieldKey, updated.joinToString(SEP))
+            .apply()
+        _cameraState.value = _cameraState.value.copy(
+            recentValues = _cameraState.value.recentValues + (fieldKey to updated)
+        )
+    }
+
+    /** 字段的可选值：数据库显式配置 + 内置预设。 */
+    fun optionsFor(field: TemplateField): List<String> = FieldPresets.merge(field.label, field.options)
+
+    /** 该字段最近用过的值，排在选项最前面。 */
+    fun recentFor(fieldKey: String): List<String> =
+        _cameraState.value.recentValues[fieldKey].orEmpty()
+
+    // ------------------------------------------------------------ 拍摄反馈
+
+    fun beginCapture() {
+        _cameraState.value = _cameraState.value.copy(
+            feedback = _cameraState.value.feedback.copy(isSaving = true, banner = null)
+        )
+    }
+
+    fun showBanner(text: String, ok: Boolean) {
+        val fb = _cameraState.value.feedback
+        _cameraState.value = _cameraState.value.copy(
+            feedback = fb.copy(
+                isSaving = false,
+                banner = text,
+                bannerOk = ok,
+                bannerSeq = fb.bannerSeq + 1
+            )
+        )
+    }
+
+    fun dismissBanner() {
+        _cameraState.value = _cameraState.value.copy(
+            feedback = _cameraState.value.feedback.copy(banner = null)
+        )
     }
 
     private fun observeData() {
@@ -151,6 +230,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun updateField(key: String, value: String) {
         val current = _cameraState.value.fieldValues
         _cameraState.value = _cameraState.value.copy(fieldValues = current.apply { put(key, value) })
+        rememberValue(key, value)
     }
 
     fun refreshLocation() {
@@ -194,9 +274,28 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 )
             )
             refreshRecentPhotosSync()
+            val fb = _cameraState.value.feedback
+            _cameraState.value = _cameraState.value.copy(
+                feedback = fb.copy(
+                    isSaving = false,
+                    lastThumb = result.watermarkedFile.absolutePath,
+                    banner = "已保存到相册",
+                    bannerOk = true,
+                    bannerSeq = fb.bannerSeq + 1
+                )
+            )
             true
         } catch (t: Throwable) {
             android.util.Log.e("SiteStamp", "saveAndRecord failed", t)
+            val fb = _cameraState.value.feedback
+            _cameraState.value = _cameraState.value.copy(
+                feedback = fb.copy(
+                    isSaving = false,
+                    banner = "保存失败：" + (t.message ?: "未知错误"),
+                    bannerOk = false,
+                    bannerSeq = fb.bannerSeq + 1
+                )
+            )
             false
         }
     }
@@ -324,10 +423,27 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             )
             fieldDao.insertAll(
                 listOf(
-                    TemplateField(templateId = tplId, fieldKey = "area", label = "施工区域", sortOrder = 0),
-                    TemplateField(templateId = tplId, fieldKey = "item", label = "检查事项", sortOrder = 1)
+                    TemplateField(
+                        templateId = tplId,
+                        fieldKey = "area",
+                        label = "施工区域",
+                        options = FieldPresets.forLabel("施工区域").joinToString(","),
+                        sortOrder = 0
+                    ),
+                    TemplateField(
+                        templateId = tplId,
+                        fieldKey = "item",
+                        label = "检查事项",
+                        options = FieldPresets.forLabel("检查事项").joinToString(","),
+                        sortOrder = 1
+                    )
                 )
             )
         }
+    }
+
+    private companion object {
+        const val PREFIX_RECENT = "recent:"
+        const val SEP = "\u0001"
     }
 }

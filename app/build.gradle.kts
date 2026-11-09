@@ -13,8 +13,8 @@ android {
         applicationId = "com.cscec.sitestamp"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 4
+        versionName = "1.3"
     }
 
     buildTypes {
