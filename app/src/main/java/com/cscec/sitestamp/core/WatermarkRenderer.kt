@@ -8,12 +8,14 @@ import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.Typeface
+import android.util.Log
 import androidx.exifinterface.media.ExifInterface
 import java.io.File
 import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.math.abs
 
 /**
  * 水印渲染核心：在原始高分辨率照片上按比例绘制底部半透明信息块。
@@ -28,6 +30,9 @@ object WatermarkRenderer {
         val captureTime: String,
         val gpsText: String,
         val addressText: String,
+        val latitude: Double? = null,
+        val longitude: Double? = null,
+        val accuracy: Float? = null,
         val showGps: Boolean = true,
         val showAddress: Boolean = true,
         val showTime: Boolean = true
@@ -35,82 +40,133 @@ object WatermarkRenderer {
 
     /**
      * 合成水印照片。
-     * @param originalFile 原图文件
-     * @param outputFile 输出文件（水印图）
+     * @return true 表示水印图已成功写出
      */
-    fun render(originalFile: File, outputFile: File, data: WatermarkData) {
-        val bounds = BitmapFactory.Options().apply {
-            inJustDecodeBounds = true
+    fun render(originalFile: File, outputFile: File, data: WatermarkData): Boolean {
+        if (!originalFile.exists() || originalFile.length() <= 0L) {
+            Log.e(TAG, "render: original file missing or empty")
+            return false
         }
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(originalFile.path, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
+            Log.e(TAG, "render: cannot read image bounds")
+            return false
+        }
         val opts = BitmapFactory.Options().apply {
-            inSampleSize = calculateInSampleSize(bounds.outWidth, bounds.outHeight, 4096)
+            inSampleSize = calculateInSampleSize(bounds.outWidth, bounds.outHeight, MAX_DIMENSION)
         }
-        var bitmap = BitmapFactory.decodeFile(originalFile.path, opts) ?: return
-        bitmap = rotateByExif(bitmap, originalFile)
+        val decoded = BitmapFactory.decodeFile(originalFile.path, opts)
+        if (decoded == null) {
+            Log.e(TAG, "render: decode returned null")
+            return false
+        }
+        val bitmap = rotateByExif(decoded, originalFile)
+        if (bitmap !== decoded) decoded.recycle()
 
-        val width = bitmap.width
-        val height = bitmap.height
-        val canvas = Canvas(bitmap)
+        try {
+            val width = bitmap.width
+            val height = bitmap.height
+            if (width <= 0 || height <= 0) return false
+            val canvas = Canvas(bitmap)
 
-        // 以照片高度为基准动态计算字号，保证不同分辨率比例一致
-        val baseSize = height * 0.022f // 约 2.2% 照片高度
-        val titleSize = baseSize * 1.35f
-        val labelSize = baseSize * 0.95f
-        val valueSize = baseSize * 0.95f
+            // 以照片高度为基准动态计算字号，保证不同分辨率比例一致
+            val baseSize = height * 0.022f
+            val titleSize = baseSize * 1.35f
+            val labelSize = baseSize * 0.95f
+            val valueSize = baseSize * 0.95f
 
-        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.WHITE
-            typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+            val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = Color.WHITE
+                typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+            }
+
+            val lines = mutableListOf<Pair<Float, String>>()
+            if (data.projectName.isNotBlank()) lines.add(titleSize to data.projectName)
+            if (data.company.isNotBlank()) lines.add(titleSize to data.company)
+            if (data.fields.any { it.second.isNotBlank() }) lines.add(labelSize to "")
+            for ((label, value) in data.fields) {
+                if (value.isBlank()) continue
+                lines.add(valueSize to label + "：" + value)
+            }
+            if (data.showTime && data.captureTime.isNotBlank()) {
+                lines.add(valueSize to "拍摄时间：" + data.captureTime)
+            }
+            if (data.showGps && data.gpsText.isNotBlank()) lines.add(valueSize to data.gpsText)
+            if (data.showAddress && data.addressText.isNotBlank()) lines.add(valueSize to data.addressText)
+
+            if (lines.isEmpty()) {
+                Log.w(TAG, "render: nothing to draw")
+                return false
+            }
+
+            val padX = width * 0.035f
+            val padY = height * 0.012f
+            var blockHeight = 0f
+            for ((size, _) in lines) blockHeight += size * 1.5f
+            blockHeight += padY * 2f
+
+            val blockTop = height - blockHeight
+            val blockRect = RectF(0f, blockTop, width.toFloat(), height.toFloat())
+
+            val bgPaint = Paint().apply {
+                color = Color.argb(180, 0, 0, 0)
+                style = Paint.Style.FILL
+            }
+            canvas.drawRect(blockRect, bgPaint)
+
+            var y = blockTop + padY + baseSize
+            for ((size, text) in lines) {
+                if (text.isNotEmpty()) {
+                    paint.textSize = size
+                    paint.color = if (size >= titleSize) Color.WHITE else Color.LTGRAY
+                    canvas.drawText(text, padX, y, paint)
+                }
+                y += size * 1.5f
+            }
+
+            FileOutputStream(outputFile).use { fos ->
+                bitmap.compress(Bitmap.CompressFormat.JPEG, 92, fos)
+                fos.flush()
+            }
+        } finally {
+            bitmap.recycle()
         }
 
-        // 计算内容行
-        val lines = mutableListOf<Pair<Float, String>>() // size, text
-        lines.add(titleSize to data.projectName)
-        lines.add(titleSize to data.company)
-        lines.add(labelSize to "")
-        for ((label, value) in data.fields) {
-            val line = if (value.isEmpty()) label else "$label：$value"
-            if (line.isNotEmpty()) lines.add(valueSize to line)
-        }
-        if (data.showTime) lines.add(valueSize to "拍摄时间：${data.captureTime}")
-        if (data.showGps) lines.add(valueSize to data.gpsText)
-        if (data.showAddress) lines.add(valueSize to data.addressText)
+        writeExif(outputFile, data)
+        return outputFile.exists() && outputFile.length() > 0L
+    }
 
-        // 计算块高度与内边距
-        val padX = width * 0.035f
-        val padY = height * 0.012f
-        var blockHeight = 0f
-        for ((size, text) in lines) {
-            paint.textSize = size
-            blockHeight += size * 1.5f
+    /** README 承诺写入 EXIF 时间与 GPS；旧实现完全没有调用，这里补齐。 */
+    private fun writeExif(file: File, data: WatermarkData) {
+        try {
+            val exif = ExifInterface(file.absolutePath)
+            val now = SimpleDateFormat("yyyy:MM:dd HH:mm:ss", Locale.US).format(Date())
+            exif.setAttribute(ExifInterface.TAG_DATETIME_ORIGINAL, now)
+            exif.setAttribute(ExifInterface.TAG_DATETIME, now)
+            exif.setAttribute(ExifInterface.TAG_SOFTWARE, "SiteStamp")
+            val lat = data.latitude
+            val lng = data.longitude
+            if (lat != null && lng != null) {
+                exif.setAttribute(ExifInterface.TAG_GPS_LATITUDE, toDms(lat))
+                exif.setAttribute(ExifInterface.TAG_GPS_LATITUDE_REF, if (lat >= 0) "N" else "S")
+                exif.setAttribute(ExifInterface.TAG_GPS_LONGITUDE, toDms(lng))
+                exif.setAttribute(ExifInterface.TAG_GPS_LONGITUDE_REF, if (lng >= 0) "E" else "W")
+            }
+            exif.saveAttributes()
+        } catch (e: Exception) {
+            Log.w(TAG, "writeExif failed", e)
         }
-        blockHeight += padY * 2f
+    }
 
-        val blockTop = height - blockHeight
-        val blockRect = RectF(0f, blockTop, width.toFloat(), height.toFloat())
-
-        // 绘制半透明背景
-        val bgPaint = Paint().apply {
-            color = Color.argb(180, 0, 0, 0) // 68% 黑
-            style = Paint.Style.FILL
-        }
-        canvas.drawRect(blockRect, bgPaint)
-
-        // 绘制文字
-        var y = blockTop + padY + baseSize
-        for ((size, text) in lines) {
-            paint.textSize = size
-            paint.color = if (size >= titleSize) Color.WHITE else Color.LTGRAY
-            canvas.drawText(text, padX, y, paint)
-            y += size * 1.5f
-        }
-
-        // 输出
-        FileOutputStream(outputFile).use { fos ->
-            bitmap.compress(Bitmap.CompressFormat.JPEG, 92, fos)
-        }
-        bitmap.recycle()
+    /** 十进制度转 EXIF 要求的度/分/秒有理数字符串。 */
+    private fun toDms(value: Double): String {
+        val absValue = abs(value)
+        val deg = absValue.toInt()
+        val minFull = (absValue - deg) * 60
+        val min = minFull.toInt()
+        val sec = (minFull - min) * 60
+        return String.format(Locale.US, "%d/1,%d/1,%d/1000", deg, min, (sec * 1000).toInt())
     }
 
     private fun calculateInSampleSize(w: Int, h: Int, max: Int): Int {
@@ -122,7 +178,9 @@ object WatermarkRenderer {
     private fun rotateByExif(bitmap: Bitmap, file: File): Bitmap {
         file.inputStream().use { input ->
             val exif = ExifInterface(input)
-            val orientation = exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
+            val orientation = exif.getAttributeInt(
+                ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL
+            )
             val matrix = Matrix()
             when (orientation) {
                 ExifInterface.ORIENTATION_ROTATE_90 -> matrix.postRotate(90f)
@@ -130,8 +188,15 @@ object WatermarkRenderer {
                 ExifInterface.ORIENTATION_ROTATE_270 -> matrix.postRotate(270f)
                 ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> matrix.preScale(-1f, 1f)
                 ExifInterface.ORIENTATION_FLIP_VERTICAL -> matrix.preScale(1f, -1f)
-                ExifInterface.ORIENTATION_TRANSPOSE -> { matrix.postRotate(90f); matrix.preScale(-1f, 1f) }
-                ExifInterface.ORIENTATION_TRANSVERSE -> { matrix.postRotate(270f); matrix.preScale(-1f, 1f) }
+                ExifInterface.ORIENTATION_TRANSPOSE -> {
+                    matrix.postRotate(90f)
+                    matrix.preScale(-1f, 1f)
+                }
+
+                ExifInterface.ORIENTATION_TRANSVERSE -> {
+                    matrix.postRotate(270f)
+                    matrix.preScale(-1f, 1f)
+                }
             }
             if (matrix.isIdentity) return bitmap
             return Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
@@ -141,4 +206,7 @@ object WatermarkRenderer {
     fun nowTime(): String {
         return SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
     }
+
+    private const val TAG = "SiteStamp"
+    private const val MAX_DIMENSION = 4096
 }
