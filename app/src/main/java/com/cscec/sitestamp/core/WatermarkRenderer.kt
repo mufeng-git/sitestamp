@@ -764,15 +764,15 @@ object WatermarkRenderer {
         return out
     }
 
-    private fun cleanTime(raw: String): String =
+    internal fun cleanTime(raw: String): String =
         raw.replace("拍摄时间：", "").replace("拍摄时间:", "").trim()
 
-    private fun cleanGps(raw: String): String {
+    internal fun cleanGps(raw: String): String {
         val text = raw.replace("GPS：", "").replace("GPS:", "").trim()
         return if (text.isEmpty() || text == "定位未获取") "" else "坐标 $text"
     }
 
-    private fun cleanAddress(raw: String): String {
+    internal fun cleanAddress(raw: String): String {
         val text = raw
             .replace("地址：", "")
             .replace("地址:", "")
@@ -804,7 +804,7 @@ object WatermarkRenderer {
         }
     }
 
-    private fun toExifDateTime(captureTime: String): String {
+    internal fun toExifDateTime(captureTime: String): String {
         val outFormat = SimpleDateFormat("yyyy:MM:dd HH:mm:ss", Locale.US)
         return try {
             val patterns = listOf("yyyy.MM.dd HH:mm", "yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd HH:mm")
@@ -820,7 +820,7 @@ object WatermarkRenderer {
     }
 
     /** 十进制度转 EXIF 度/分/秒，形如 "31/1,14/1,5000/1000"。 */
-    private fun toDmsRational(value: Double): String {
+    internal fun toDmsRational(value: Double): String {
         val totalMillis = (abs(value) * 3_600_000).roundToLong()
         val degrees = totalMillis / 3_600_000
         val minutes = (totalMillis % 3_600_000) / 60_000
@@ -828,7 +828,7 @@ object WatermarkRenderer {
         return "$degrees/1,$minutes/1,$secondsMillis/1000"
     }
 
-    private fun calculateInSampleSize(w: Int, h: Int, max: Int): Int {
+    internal fun calculateInSampleSize(w: Int, h: Int, max: Int): Int {
         var sample = 1
         while (w / sample > max || h / sample > max) sample *= 2
         return sample
