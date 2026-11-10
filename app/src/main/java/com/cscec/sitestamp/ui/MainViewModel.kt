@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.cscec.sitestamp.core.LocationRepository
 import com.cscec.sitestamp.core.PhotoRepository
 import com.cscec.sitestamp.core.WatermarkRenderer
+import com.cscec.sitestamp.core.WeatherRepository
 import com.cscec.sitestamp.data.AppDatabase
 import com.cscec.sitestamp.data.FieldPresets
 import com.cscec.sitestamp.data.PhotoRecord
@@ -45,6 +46,7 @@ data class CameraState(
     val gpsText: String = "定位未获取",
     val addressText: String = "地址：正在解析",
     val captureTime: String = "",
+    val weatherText: String = "",
     val recentValues: Map<String, List<String>> = emptyMap(),
     val feedback: CaptureFeedback = CaptureFeedback()
 )
@@ -65,6 +67,19 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /** 最近使用过的字段值，现场同一个区域会连拍十几张，避免每次都翻选项。 */
     private val recentPrefs = app.getSharedPreferences("sitestamp_recent", Context.MODE_PRIVATE)
 
+    private val weatherRepo = WeatherRepository(app)
+
+    /** 中建 logo（assets/cscec_logo.png）；缺素材时渲染器自动退化为占位画法。 */
+    private val logoBitmap: android.graphics.Bitmap? by lazy {
+        try {
+            app.assets.open("cscec_logo.png").use {
+                android.graphics.BitmapFactory.decodeStream(it)
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     val location = locationRepo.location
 
     private val _projects = MutableStateFlow<List<Project>>(emptyList())
@@ -84,6 +99,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         observeLocation()
         startClock()
         loadRecentValues()
+        observeWeather()
         locationRepo.requestUpdate()
     }
 
@@ -169,6 +185,22 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     gpsText = locationRepo.formatGps(snapshot),
                     addressText = locationRepo.formatAddress(snapshot)
                 )
+                val lat = snapshot.latitude
+                val lng = snapshot.longitude
+                if (lat != null && lng != null) {
+                    viewModelScope.launch { weatherRepo.refresh(lat, lng) }
+                }
+            }
+        }
+    }
+
+    /** 天气是水印要素之一，取不到就空着，绝不阻塞拍摄。 */
+    private fun observeWeather() {
+        viewModelScope.launch {
+            weatherRepo.weatherText.collect { text ->
+                if (_cameraState.value.weatherText != text) {
+                    _cameraState.value = _cameraState.value.copy(weatherText = text)
+                }
             }
         }
     }
@@ -256,7 +288,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             gpsText = locationRepo.formatGps(snapshot),
             addressText = locationRepo.formatAddress(snapshot),
             latitude = snapshot.latitude,
-            longitude = snapshot.longitude
+            longitude = snapshot.longitude,
+            weatherText = state.weatherText,
+            style = WatermarkRenderer.STYLE_BLOCK,
+            logo = logoBitmap
         )
         try {
             val result = photoRepo.saveWatermarked(originalFile, data)
@@ -316,7 +351,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             gpsText = locationRepo.formatGps(snapshot),
             addressText = locationRepo.formatAddress(snapshot),
             latitude = snapshot.latitude,
-            longitude = snapshot.longitude
+            longitude = snapshot.longitude,
+            weatherText = state.weatherText,
+            style = WatermarkRenderer.STYLE_BLOCK,
+            logo = logoBitmap
         )
         return try {
             photoRepo.saveWatermarked(originalFile, data)

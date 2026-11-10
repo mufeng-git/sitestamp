@@ -42,10 +42,19 @@ object WatermarkRenderer {
         val showGps: Boolean = true,
         val showAddress: Boolean = true,
         val showTime: Boolean = true,
-        val brandColor: Int = DEFAULT_BRAND
+        val brandColor: Int = DEFAULT_BRAND,
+        val weatherText: String = "",
+        val style: Int = STYLE_BLOCK,
+        val logo: Bitmap? = null
     )
 
     private const val DEFAULT_BRAND = 0xFF2F7BF6.toInt()
+
+    /** 深色卡片样式（简洁，无 logo，适合快速留痕）。 */
+    const val STYLE_CARD = 0
+
+    /** 中建三段式（蓝头/灰身/蓝脚 + logo 竖栏），默认样式。 */
+    const val STYLE_BLOCK = 1
 
     private const val KIND_TITLE = 0
     private const val KIND_SUB = 1
@@ -81,7 +90,11 @@ object WatermarkRenderer {
         if (bitmap !== decoded) decoded.recycle()
 
         val canvas = Canvas(bitmap)
-        drawCard(canvas, bitmap.width, bitmap.height, data)
+        if (data.style == STYLE_BLOCK) {
+            drawBlock(canvas, bitmap.width, bitmap.height, data)
+        } else {
+            drawCard(canvas, bitmap.width, bitmap.height, data)
+        }
 
         FileOutputStream(outputFile).use { fos ->
             bitmap.compress(Bitmap.CompressFormat.JPEG, 94, fos)
@@ -90,6 +103,175 @@ object WatermarkRenderer {
 
         // 写入拍摄时间与 GPS（EXIF 度分秒有理数格式）
         writeExif(outputFile, data)
+    }
+
+    // ------------------------------------------------------------------ 三段式（默认样式）
+
+    private val BLOCK_BLUE = Color.rgb(46, 109, 181)
+    private val BLOCK_GRAY = Color.rgb(192, 192, 192)
+    private val BLOCK_INK = Color.rgb(32, 32, 32)
+    private val BLOCK_LOGO_BLUE = Color.rgb(0, 125, 180)
+    private val BLOCK_LOGO_BG = Color.rgb(250, 250, 250)
+
+    /** 两字标签用全角空格撑成四字宽，冒号位置才对得齐。 */
+    private fun spreadLabel(label: String): String {
+        val t = label.trim().trimEnd('：', ':')
+        return if (t.length == 2) t[0] + "\u3000" + t[1] else t
+    }
+
+    /**
+     * 中建三段式水印：白底 logo 竖栏 + 蓝标题条 + 灰字段区 + 蓝落款条。
+     * 结构照现场通用的工程水印模板，直角、不透明，缩略图里也一眼能认出。
+     */
+    private fun drawBlock(canvas: Canvas, w: Int, h: Int, data: WatermarkData) {
+        val bodyS = h * 0.0185f
+        val titleS = h * 0.0235f
+        val footS = h * 0.0195f
+
+        val cardW = w * 0.70f
+        val marginX = w * 0.030f
+        val marginBottom = h * 0.032f
+        val logoW = cardW * 0.20f
+        val headerH = h * 0.050f
+        val footH = h * 0.044f
+        val rowH = h * 0.040f
+        val padIn = h * 0.011f
+        val contentX = marginX + logoW + padIn
+        val gapLabel = h * 0.012f
+
+        val boldFace = Typeface.create("sans-serif-medium", Typeface.BOLD)
+        val normalFace = Typeface.create("sans-serif", Typeface.NORMAL)
+        val measure = Paint(Paint.ANTI_ALIAS_FLAG)
+
+        // ---- 组装字段行：模板字段 -> 拍摄时间 -> 天气 -> 地点
+        val rows = ArrayList<Pair<String, String>>()
+        data.fields.filter { it.second.isNotBlank() }
+            .forEach { rows.add(spreadLabel(it.first) to it.second.trim()) }
+        if (data.showTime) {
+            val t = cleanTime(data.captureTime)
+            if (t.isNotEmpty()) rows.add("拍摄时间" to t)
+        }
+        if (data.weatherText.isNotBlank()) rows.add("天\u3000气" to data.weatherText.trim())
+        val addr = if (data.showAddress) cleanAddress(data.addressText) else ""
+        if (addr.isNotEmpty()) rows.add("地\u3000点" to addr)
+        if (rows.isEmpty()) return
+
+        // 标签列宽（绘制用粗体，测量也必须用粗体）
+        var labelW = 0f
+        measure.textSize = bodyS
+        measure.typeface = boldFace
+        for ((label, _) in rows) labelW = max(labelW, measure.measureText(label))
+        val valueMaxW = max(cardW - logoW - padIn * 2f - labelW - gapLabel, cardW * 0.25f)
+
+        measure.typeface = normalFace
+        val laid = ArrayList<Pair<String, Pair<String, List<String>>>>()
+        var bodyContentH = 0f
+        for ((label, value) in rows) {
+            measure.textSize = bodyS
+            val lines = wrap(value, valueMaxW, measure)
+            laid.add(label to (value to lines))
+            bodyContentH += rowH * lines.size
+        }
+
+        val bodyH = padIn * 2f + bodyContentH
+        val cardH = headerH + bodyH + footH
+        val cardRight = marginX + cardW
+        val cardBottom = h - marginBottom
+        val cardTop = cardBottom - cardH
+        val bodyTop = cardTop + headerH
+        val footTop = bodyTop + bodyH
+
+        // ---- 四个色块
+        canvas.drawRect(RectF(marginX, cardTop, marginX + logoW, cardTop + headerH), Paint().apply {
+            color = BLOCK_LOGO_BG
+        })
+        canvas.drawRect(RectF(marginX + logoW, cardTop, cardRight, bodyTop), Paint().apply {
+            color = BLOCK_BLUE
+        })
+        canvas.drawRect(RectF(marginX, bodyTop, cardRight, footTop), Paint().apply {
+            color = BLOCK_GRAY
+        })
+        canvas.drawRect(RectF(marginX, footTop, cardRight, cardBottom), Paint().apply {
+            color = BLOCK_BLUE
+        })
+
+        drawLogo(canvas, marginX, cardTop, logoW, headerH, data.logo)
+
+        // ---- 标题
+        val text = Paint(Paint.ANTI_ALIAS_FLAG)
+        text.textSize = titleS
+        text.typeface = boldFace
+        text.color = Color.WHITE
+        canvas.drawText(data.projectName.trim(), contentX, cardTop + headerH / 2f + titleS * 0.36f, text)
+
+        // ---- 字段区
+        var y = bodyTop + padIn
+        for ((label, pair) in laid) {
+            val lines = pair.second
+            text.textSize = bodyS
+            text.typeface = boldFace
+            text.color = BLOCK_INK
+            canvas.drawText(label, contentX, y + rowH * 0.52f + bodyS * 0.36f, text)
+
+            text.typeface = normalFace
+            var vy = y + rowH * 0.52f + bodyS * 0.36f
+            for (line in lines) {
+                canvas.drawText(line, contentX + labelW + gapLabel, vy, text)
+                vy += rowH
+            }
+            y += rowH * lines.size
+        }
+
+        // ---- 落款
+        val builder = data.company.trim()
+        val footText = if (builder.isEmpty()) "施工单位：中建国际建设有限公司" else "施工单位：$builder"
+        text.textSize = footS
+        text.typeface = normalFace
+        text.color = Color.WHITE
+        canvas.drawText(footText, contentX, footTop + footH / 2f + footS * 0.36f, text)
+    }
+
+    /** logo 素材缺失时画占位（蓝块 + 建筑抽象线 + 中国建筑四字），不让竖栏空着。 */
+    private fun drawLogo(canvas: Canvas, x: Float, y: Float, lw: Float, lh: Float, logo: Bitmap?) {
+        val box = lw * 0.52f
+        val bx = x + (lw - box) / 2f
+        val by = y + lh * 0.10f
+        if (logo != null) {
+            val dst = RectF(bx, by, bx + box, by + box * 0.92f)
+            canvas.drawBitmap(logo, null, dst, Paint(Paint.FILTER_BITMAP_FLAG))
+            return
+        }
+        val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = BLOCK_LOGO_BLUE }
+        canvas.drawRect(RectF(bx, by, bx + box, by + box * 0.92f), fill)
+
+        val white = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE }
+        val barW = box * 0.14f
+        val fracs = floatArrayOf(0.22f, 0.44f, 0.66f)
+        for ((i, frac) in fracs.withIndex()) {
+            val hh = box * (0.30f + 0.10f * i)
+            canvas.drawRect(
+                RectF(
+                    bx + box * frac, by + box * 0.72f - hh,
+                    bx + box * frac + barW, by + box * 0.72f
+                ),
+                white
+            )
+        }
+        canvas.drawRect(
+            RectF(bx + box * 0.18f, by + box * 0.16f, bx + box * 0.82f, by + box * 0.24f),
+            white
+        )
+
+        val fs = box * 0.34f
+        val namePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = BLOCK_LOGO_BLUE
+            textSize = fs
+            typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+            textAlign = Paint.Align.CENTER
+        }
+        val cx = x + lw / 2f
+        canvas.drawText("中国", cx, by + box * 0.92f + fs * 1.35f, namePaint)
+        canvas.drawText("建筑", cx, by + box * 0.92f + fs * 2.45f, namePaint)
     }
 
     // ------------------------------------------------------------------ 卡片绘制
@@ -355,7 +537,12 @@ object WatermarkRenderer {
     private fun toExifDateTime(captureTime: String): String {
         val outFormat = SimpleDateFormat("yyyy:MM:dd HH:mm:ss", Locale.US)
         return try {
-            val parsed = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).parse(captureTime)
+            val patterns = listOf("yyyy.MM.dd HH:mm", "yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd HH:mm")
+            var parsed: Date? = null
+            for (p in patterns) {
+                parsed = SimpleDateFormat(p, Locale.getDefault()).parse(captureTime)
+                if (parsed != null) break
+            }
             outFormat.format(parsed ?: Date())
         } catch (_: Exception) {
             outFormat.format(Date())
@@ -399,6 +586,7 @@ object WatermarkRenderer {
         }
     }
 
+    /** 现场口径：2026.11.10 07:34（点分、到分钟，与工程水印习惯一致）。 */
     fun nowTime(): String =
-        SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
+        SimpleDateFormat("yyyy.MM.dd HH:mm", Locale.getDefault()).format(Date())
 }

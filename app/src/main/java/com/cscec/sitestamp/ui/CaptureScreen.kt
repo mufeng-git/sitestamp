@@ -523,100 +523,124 @@ private fun RoundIconButton(onClick: () -> Unit, content: @Composable () -> Unit
 
 @Composable
 private fun WatermarkPreviewCard(state: CameraState, modifier: Modifier = Modifier) {
+    // 与 WatermarkRenderer.drawBlock 同构：白底 logo 竖栏 + 蓝标题条 + 灰字段区 + 蓝落款条
+    val cardW = 292.dp
     val filled = state.currentFields
-        .map { it.label to state.fieldValues[it.fieldKey].orEmpty() }
+        .map { spreadLabel(it.label) to state.fieldValues[it.fieldKey].orEmpty() }
         .filter { it.second.isNotBlank() }
+    val address = state.addressText.replace("地址：", "").trim()
+    val builder = state.currentProject?.company?.takeIf { it.isNotBlank() }
+        ?: "中建国际建设有限公司"
 
-    Row(
+    Column(
         modifier = modifier
-            .width(272.dp)
-            .height(IntrinsicSize.Min)
-            .clip(RoundedCornerShape(10.dp))
-            .background(Color.Black.copy(alpha = 0.62f))
-            .border(0.5.dp, Color.White.copy(alpha = 0.16f), RoundedCornerShape(10.dp))
+            .width(cardW)
+            .clip(RoundedCornerShape(2.dp))
     ) {
-        Box(
-            Modifier
-                .width(3.dp)
-                .fillMaxHeight()
-                .background(BrandColors.Primary)
-        )
-        Column(Modifier.padding(horizontal = 9.dp, vertical = 7.dp)) {
-            Text(
-                state.currentProject?.name ?: "未选择项目",
-                color = Color.White,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            val company = state.currentProject?.company.orEmpty()
-            if (company.isNotBlank()) {
-                Text(
-                    company,
-                    color = Color.White.copy(alpha = 0.76f),
-                    fontSize = 9.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-            if (filled.isNotEmpty()) {
-                Spacer(Modifier.height(4.dp))
-                ThinDivider()
-                filled.forEach { (label, value) ->
-                    Row(Modifier.padding(top = 3.dp)) {
-                        Text(
-                            label,
-                            color = Color.White.copy(alpha = 0.78f),
-                            fontSize = 10.sp,
-                            modifier = Modifier.width(52.dp)
-                        )
-                        Text(
-                            value,
-                            color = Color.White,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Medium,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
+        Row(Modifier.fillMaxWidth().height(44.dp)) {
+            Box(
+                Modifier
+                    .fillMaxHeight()
+                    .width(cardW * 0.20f)
+                    .background(Color(0xFFFAFAFA)),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Box(
+                        Modifier
+                            .size(15.dp)
+                            .clip(RoundedCornerShape(2.dp))
+                            .background(Color(0xFF007DB4))
+                    )
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        "中国建筑",
+                        color = Color(0xFF007DB4),
+                        fontSize = 7.sp,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             }
-            Spacer(Modifier.height(4.dp))
-            ThinDivider()
+            Box(
+                Modifier
+                    .fillMaxHeight()
+                    .weight(1f)
+                    .background(Color(0xFF2E6DB5)),
+                contentAlignment = Alignment.CenterStart
+            ) {
+                Text(
+                    state.currentProject?.name ?: "未选择项目",
+                    color = Color.White,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(horizontal = 9.dp)
+                )
+            }
+        }
+
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .background(Color(0xFFC0C0C0))
+                .padding(horizontal = 9.dp, vertical = 5.dp)
+        ) {
+            val ink = Color(0xFF202020)
+            filled.forEach { (label, value) ->
+                PreviewRow(label, value, ink)
+            }
+            PreviewRow("拍摄时间", state.captureTime, ink)
+            if (state.weatherText.isNotBlank()) PreviewRow("天\u3000气", state.weatherText, ink)
+            if (address.isNotBlank() && address != "不可用") {
+                PreviewRow("地\u3000点", address, ink, maxLines = 2)
+            }
+        }
+
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(28.dp)
+                .background(Color(0xFF2E6DB5)),
+            contentAlignment = Alignment.CenterStart
+        ) {
             Text(
-                state.captureTime,
+                "施工单位：$builder",
                 color = Color.White,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.padding(top = 4.dp)
-            )
-            Text(
-                state.gpsText.replace("GPS：", "坐标 "),
-                color = Color.White.copy(alpha = 0.78f),
-                fontSize = 9.sp,
+                fontSize = 10.sp,
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                state.addressText.replace("地址：", ""),
-                color = Color.White.copy(alpha = 0.62f),
-                fontSize = 9.sp,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(horizontal = 9.dp)
             )
         }
     }
 }
 
 @Composable
-private fun ThinDivider() {
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .height(0.5.dp)
-            .background(Color.White.copy(alpha = 0.22f))
-    )
+private fun PreviewRow(label: String, value: String, ink: Color, maxLines: Int = 1) {
+    Row(Modifier.padding(vertical = 1.5.dp)) {
+        Text(
+            label,
+            color = ink,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+            modifier = Modifier.width(54.dp)
+        )
+        Text(
+            value,
+            color = ink,
+            fontSize = 10.sp,
+            maxLines = maxLines,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+
+/** 两字标签用全角空格撑成四字宽，与渲染端 spreadLabel 保持一致。 */
+private fun spreadLabel(label: String): String {
+    val t = label.trim().trimEnd('\uFF1A', ':')
+    return if (t.length == 2) t[0] + "\u3000" + t[1] else t
 }
 
 // ---------------------------------------------------------------------- 字段快捷栏
