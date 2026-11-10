@@ -49,6 +49,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FlashOff
 import androidx.compose.material.icons.filled.FlashOn
 import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Tune
@@ -545,8 +546,8 @@ private fun TopBar(
 
         RoundIconButton(onClick = onWatermarkSettings) {
             Icon(
-                Icons.Default.Tune,
-                contentDescription = "水印设置",
+                Icons.Default.Palette,
+                contentDescription = "水印样式设置",
                 tint = Color.White,
                 modifier = Modifier.size(19.dp)
             )

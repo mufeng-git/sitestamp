@@ -124,7 +124,21 @@ fun WatermarkSettingsSheet(
                                 name = item.second,
                                 selected = style.styleId == item.first,
                                 style = style
-                            ) { onStyleChange(style.copy(styleId = item.first)) }
+                            ) {
+                                val newId = item.first
+                                val bg = if (style.bgColor == WatermarkStyle.defaultBgFor(style.styleId)) {
+                                    WatermarkStyle.defaultBgFor(newId)
+                                } else {
+                                    style.bgColor
+                                }
+                                val alpha =
+                                    if (style.bgAlpha == WatermarkStyle.defaultAlphaFor(style.styleId)) {
+                                        WatermarkStyle.defaultAlphaFor(newId)
+                                    } else {
+                                        style.bgAlpha
+                                    }
+                                onStyleChange(style.copy(styleId = newId, bgColor = bg, bgAlpha = alpha))
+                            }
                         }
                     }
                     Spacer(Modifier.height(14.dp))

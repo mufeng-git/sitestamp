@@ -45,8 +45,31 @@ data class WatermarkStyle(
         const val STYLE_TIMEBAR = 4  // 通栏大时间条
         const val STYLE_COMPACT = 5  // 紧凑角标
 
-        private const val DEFAULT_BG = 0x080B0F
-        private const val DEFAULT_ALPHA = 186
+        /** 三段式默认浅灰底（与现场通用工程水印一致，文字自动转黑）。 */
+        private const val DEFAULT_BG = 0xC0C0C0
+
+        /** 三段式与白卡是"实心工程水印"风格，默认不透明；其余样式默认半透明。 */
+        private const val DEFAULT_ALPHA = 255
+
+        /** 各样式的默认底色：切样式时底色跟着换，避免"浅色字样式配黑底"的错搭。 */
+        fun defaultBgFor(styleId: Int): Int = when (styleId) {
+            STYLE_BLOCK -> 0xC0C0C0
+            STYLE_WHITE -> 0xFFFFFF
+            STYLE_CARD -> 0x080B0F
+            STYLE_TIMEBAR -> 0x0A0E14
+            STYLE_COMPACT -> 0x080B0F
+            else -> 0xC0C0C0
+        }
+
+        /** 切换样式时用它决定默认透明度，用户手动调过就不再覆盖。 */
+        fun defaultAlphaFor(styleId: Int): Int = when (styleId) {
+            STYLE_BLOCK -> 255
+            STYLE_WHITE -> 250
+            STYLE_CARD -> 186
+            STYLE_TIMEBAR -> 205
+            STYLE_COMPACT -> 195
+            else -> 255
+        }
         private const val DEFAULT_PRIMARY = 0x2E6DB5
         /** 0 = 跟随底色自动取黑白。 */
         private const val DEFAULT_TEXT = 0
@@ -56,13 +79,26 @@ data class WatermarkStyle(
         fun blue(color: Int): Int = color and 0xFF
 
         fun fromJson(raw: String?): WatermarkStyle {
-            if (raw.isNullOrBlank() || raw == "{}") return WatermarkStyle()
+            if (raw.isNullOrBlank() || raw == "{}") {
+                // 首装/老库（styleConfig 为空）一律落到三段式实心样板
+                return WatermarkStyle(
+                    bgColor = defaultBgFor(STYLE_BLOCK),
+                    bgAlpha = defaultAlphaFor(STYLE_BLOCK)
+                )
+            }
             return try {
                 val o = JSONObject(raw)
+                val sid = o.optInt("styleId", STYLE_BLOCK).coerceIn(1, 5)
+                val bg = o.optInt("bgColor", defaultBgFor(sid))
+                val alpha = o.optInt("bgAlpha", defaultAlphaFor(sid)).coerceIn(0, 255)
+                // 老版本存的默认组合（三段式 + 近黑底 + 73% 透明）视为"没自定义过"，迁到新默认
+                if (sid == STYLE_BLOCK && bg == 0x080B0F && alpha == 186) {
+                    return WatermarkStyle(bgColor = defaultBgFor(STYLE_BLOCK), bgAlpha = defaultAlphaFor(STYLE_BLOCK))
+                }
                 WatermarkStyle(
-                    styleId = o.optInt("styleId", STYLE_BLOCK).coerceIn(1, 5),
-                    bgColor = o.optInt("bgColor", DEFAULT_BG),
-                    bgAlpha = o.optInt("bgAlpha", DEFAULT_ALPHA).coerceIn(0, 255),
+                    styleId = sid,
+                    bgColor = bg,
+                    bgAlpha = alpha,
                     primaryColor = o.optInt("primaryColor", DEFAULT_PRIMARY),
                     textColor = o.optInt("textColor", DEFAULT_TEXT),
                     logoPath = o.optString("logoPath", ""),
