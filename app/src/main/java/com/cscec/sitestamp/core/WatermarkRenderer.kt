@@ -12,6 +12,7 @@ import android.graphics.Typeface
 import androidx.exifinterface.media.ExifInterface
 import java.io.File
 import java.io.FileOutputStream
+import java.text.ParseException
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -806,17 +807,16 @@ object WatermarkRenderer {
 
     internal fun toExifDateTime(captureTime: String): String {
         val outFormat = SimpleDateFormat("yyyy:MM:dd HH:mm:ss", Locale.US)
-        return try {
-            val patterns = listOf("yyyy.MM.dd HH:mm", "yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd HH:mm")
-            var parsed: Date? = null
-            for (p in patterns) {
-                parsed = SimpleDateFormat(p, Locale.getDefault()).parse(captureTime)
-                if (parsed != null) break
+        val patterns = listOf("yyyy.MM.dd HH:mm", "yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd HH:mm")
+        for (p in patterns) {
+            try {
+                val parsed = SimpleDateFormat(p, Locale.getDefault()).parse(captureTime)
+                if (parsed != null) return outFormat.format(parsed)
+            } catch (_: ParseException) {
+                // 当前 pattern 不匹配，跳过继续尝试下一个
             }
-            outFormat.format(parsed ?: Date())
-        } catch (_: Exception) {
-            outFormat.format(Date())
         }
+        return outFormat.format(Date())
     }
 
     /** 十进制度转 EXIF 度/分/秒，形如 "31/1,14/1,5000/1000"。 */
