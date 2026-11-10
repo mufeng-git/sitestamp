@@ -180,25 +180,23 @@ object WatermarkRenderer {
      */
     private fun drawBlock(canvas: Canvas, w: Int, h: Int, data: WatermarkData) {
         val bodyS = h * 0.0185f
-        val titleS = h * 0.0235f
-        val footS = h * 0.0195f
+        val titleS = h * 0.0232f
+        val footS = h * 0.0190f
 
-        val cardW = w * 0.70f
+        val cardW = w * 0.68f
         val marginX = w * 0.030f
-        val marginBottom = h * 0.032f
-        val logoW = cardW * 0.20f
-        val headerH = h * 0.050f
-        val footH = h * 0.044f
-        val rowH = h * 0.040f
-        val padIn = h * 0.011f
-        val contentX = marginX + logoW + padIn
-        val gapLabel = h * 0.012f
+        val marginBottom = h * 0.030f
+        val headerH = h * 0.048f
+        val footH = h * 0.042f
+        val rowH = h * 0.038f
+        val padIn = h * 0.012f
+        val radius = cardW * 0.028f
 
         val boldFace = Typeface.create("sans-serif-medium", Typeface.BOLD)
         val normalFace = Typeface.create("sans-serif", Typeface.NORMAL)
         val measure = Paint(Paint.ANTI_ALIAS_FLAG)
 
-        // ---- 组装字段行：模板字段 -> 拍摄时间 -> 天气 -> 地点
+        // ---- 行内容
         val rows = ArrayList<Pair<String, String>>()
         data.fields.filter { it.second.isNotBlank() }
             .forEach { rows.add(spreadLabel(it.first) to it.second.trim()) }
@@ -208,27 +206,32 @@ object WatermarkRenderer {
         }
         if (data.weatherText.isNotBlank()) rows.add("天\u3000气" to data.weatherText.trim())
         if (data.showCoords) {
-            val coords = cleanGps(data.gpsText)
-            if (coords.isNotEmpty()) rows.add("坐\u3000标" to coords)
+            val c = cleanGps(data.gpsText)
+            if (c.isNotEmpty()) rows.add("坐\u3000标" to c)
         }
         val addr = if (data.showAddress) cleanAddress(data.addressText) else ""
         if (addr.isNotEmpty()) rows.add("地\u3000点" to addr)
         if (rows.isEmpty()) return
 
-        // 标签列宽（绘制用粗体，测量也必须用粗体）
+        // logo 尺寸决定标题起点（不再占一整个竖栏，卡片更紧凑）
+        val logoSize = headerH * 0.60f
+        val leftPad = marginX + padIn
+        val contentX = leftPad + logoSize + padIn * 1.1f
+
         var labelW = 0f
         measure.textSize = bodyS
         measure.typeface = boldFace
         for ((label, _) in rows) labelW = max(labelW, measure.measureText(label))
-        val valueMaxW = max(cardW - logoW - padIn * 2f - labelW - gapLabel, cardW * 0.25f)
+        labelW += h * 0.014f
+        val valueMaxW = max(cardW - padIn * 2f - labelW, cardW * 0.30f)
 
         measure.typeface = normalFace
-        val laid = ArrayList<Pair<String, Pair<String, List<String>>>>()
+        val laid = ArrayList<Pair<String, List<String>>>()
         var bodyContentH = 0f
         for ((label, value) in rows) {
             measure.textSize = bodyS
             val lines = wrap(value, valueMaxW, measure)
-            laid.add(label to (value to lines))
+            laid.add(label to lines)
             bodyContentH += rowH * lines.size
         }
 
@@ -237,45 +240,65 @@ object WatermarkRenderer {
         val cardRight = marginX + cardW
         val cardBottom = h - marginBottom
         val cardTop = cardBottom - cardH
-        val bodyTop = cardTop + headerH
-        val footTop = bodyTop + bodyH
+        val cardRect = RectF(marginX, cardTop, cardRight, cardBottom)
 
-        // ---- 四个色块（底色/主色都来自用户的样式配置）
-        val headPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = data.primaryColor }
-        val bodyPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = data.bgArgb }
+        // ---- 圆角底板：三段色统一裁进圆角，四角才一致
+        canvas.save()
+        val clip = Path().apply {
+            addRoundRect(cardRect, radius, radius, Path.Direction.CW)
+        }
+        canvas.clipPath(clip)
         canvas.drawRect(
-            RectF(marginX, cardTop, marginX + logoW, cardTop + headerH),
-            Paint(Paint.ANTI_ALIAS_FLAG).apply { color = BLOCK_LOGO_BG }
+            cardRect,
+            Paint(Paint.ANTI_ALIAS_FLAG).apply { color = data.bgArgb }
         )
-        canvas.drawRect(RectF(marginX + logoW, cardTop, cardRight, bodyTop), headPaint)
-        canvas.drawRect(RectF(marginX, bodyTop, cardRight, footTop), bodyPaint)
-        canvas.drawRect(RectF(marginX, footTop, cardRight, cardBottom), headPaint)
+        canvas.drawRect(
+            RectF(marginX, cardTop, cardRight, cardTop + headerH),
+            Paint(Paint.ANTI_ALIAS_FLAG).apply { color = data.primaryColor }
+        )
+        canvas.drawRect(
+            RectF(marginX, cardTop + headerH + bodyH, cardRight, cardBottom),
+            Paint(Paint.ANTI_ALIAS_FLAG).apply { color = data.primaryColor }
+        )
+        canvas.restore()
+
+        // 细描边，边界更干净
+        canvas.drawRoundRect(
+            cardRect, radius, radius,
+            Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                style = Paint.Style.STROKE
+                strokeWidth = max(1.5f, h * 0.0006f)
+                color = Color.argb(44, 255, 255, 255)
+            }
+        )
 
         val ink = inkOn(data.bgArgb, data.textColor)
         val headInk = inkOn(data.primaryColor, null)
 
-        drawLogo(canvas, marginX, cardTop, logoW, headerH, data.logo)
+        drawLogoOnBar(canvas, leftPad, cardTop + (headerH - logoSize) / 2f, logoSize, data.logo)
 
         // ---- 标题
         val text = Paint(Paint.ANTI_ALIAS_FLAG)
         text.textSize = titleS
         text.typeface = boldFace
         text.color = headInk
-        canvas.drawText(data.projectName.trim(), contentX, cardTop + headerH / 2f + titleS * 0.36f, text)
+        canvas.drawText(
+            data.projectName.trim(), contentX,
+            cardTop + headerH / 2f + titleS * 0.36f, text
+        )
 
-        // ---- 字段区
-        var y = bodyTop + padIn
-        for ((label, pair) in laid) {
-            val lines = pair.second
+        // ---- 字段区（标签与值同基线、两栏对齐）
+        var y = cardTop + headerH + padIn
+        for ((label, lines) in laid) {
             text.textSize = bodyS
             text.typeface = boldFace
             text.color = ink
-            canvas.drawText(label, contentX, y + rowH * 0.52f + bodyS * 0.36f, text)
+            canvas.drawText(label, leftPad, y + rowH * 0.52f + bodyS * 0.36f, text)
 
             text.typeface = normalFace
             var vy = y + rowH * 0.52f + bodyS * 0.36f
             for (line in lines) {
-                canvas.drawText(line, contentX + labelW + gapLabel, vy, text)
+                canvas.drawText(line, leftPad + labelW, vy, text)
                 vy += rowH
             }
             y += rowH * lines.size
@@ -283,70 +306,69 @@ object WatermarkRenderer {
 
         // ---- 落款
         val builder = data.company.trim()
-        val footText = if (builder.isEmpty()) "施工单位：中建国际建设有限公司" else "施工单位：$builder"
+        val footText =
+            if (builder.isEmpty()) "施工单位：中建国际建设有限公司" else "施工单位：$builder"
         text.textSize = footS
         text.typeface = normalFace
         text.color = headInk
-        canvas.drawText(footText, contentX, footTop + footH / 2f + footS * 0.36f, text)
+        canvas.drawText(
+            footText, contentX,
+            cardTop + headerH + bodyH + footH / 2f + footS * 0.36f, text
+        )
     }
 
-    /** 通用 logo 徽标：等比绘制；没有素材时画一个蓝块占位，保证版式不塌。 */
-    private fun drawLogoBadge(canvas: Canvas, left: Float, top: Float, size: Float, logo: Bitmap?) {
+    /**
+     * 标题条上的 logo：白色圆角底 + 图片（或占位图形）。
+     * 刻意不用直角白衬底——那会在卡片左上角形成台阶，破坏圆角。
+     */
+    private fun drawLogoOnBar(canvas: Canvas, left: Float, top: Float, size: Float, logo: Bitmap?) {
+        val r = size * 0.26f
+        canvas.drawRoundRect(
+            RectF(left, top, left + size, top + size), r, r,
+            Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE }
+        )
+        val inner = size * 0.66f
+        val ix = left + (size - inner) / 2f
+        val iy = top + (size - inner) / 2f
+
         if (logo != null) {
+            val logoClip = Path().apply {
+                addRoundRect(
+                    RectF(ix, iy, ix + inner, iy + inner),
+                    inner * 0.14f, inner * 0.14f, Path.Direction.CW
+                )
+            }
+            canvas.save()
+            canvas.clipPath(logoClip)
             canvas.drawBitmap(
-                logo, null,
-                RectF(left, top, left + size, top + size),
+                logo, null, RectF(ix, iy, ix + inner, iy + inner),
                 Paint(Paint.FILTER_BITMAP_FLAG)
             )
-        } else {
-            canvas.drawRect(
-                RectF(left, top, left + size, top + size),
-                Paint(Paint.ANTI_ALIAS_FLAG).apply { color = BLOCK_LOGO_BLUE }
-            )
-        }
-    }
-
-    /** logo 素材缺失时画占位（蓝块 + 建筑抽象线 + 中国建筑四字），不让竖栏空着。 */
-    private fun drawLogo(canvas: Canvas, x: Float, y: Float, lw: Float, lh: Float, logo: Bitmap?) {
-        val box = lw * 0.52f
-        val bx = x + (lw - box) / 2f
-        val by = y + lh * 0.10f
-        if (logo != null) {
-            val dst = RectF(bx, by, bx + box, by + box * 0.92f)
-            canvas.drawBitmap(logo, null, dst, Paint(Paint.FILTER_BITMAP_FLAG))
+            canvas.restore()
             return
         }
-        val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = BLOCK_LOGO_BLUE }
-        canvas.drawRect(RectF(bx, by, bx + box, by + box * 0.92f), fill)
 
+        canvas.drawRect(
+            RectF(ix, iy, ix + inner, iy + inner * 0.90f),
+            Paint(Paint.ANTI_ALIAS_FLAG).apply { color = BLOCK_LOGO_BLUE }
+        )
         val white = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE }
-        val barW = box * 0.14f
+        val barW = inner * 0.10f
         val fracs = floatArrayOf(0.22f, 0.44f, 0.66f)
         for ((i, frac) in fracs.withIndex()) {
-            val hh = box * (0.30f + 0.10f * i)
+            val hh = inner * (0.24f + 0.08f * i)
             canvas.drawRect(
                 RectF(
-                    bx + box * frac, by + box * 0.72f - hh,
-                    bx + box * frac + barW, by + box * 0.72f
+                    ix + inner * frac, iy + inner * 0.70f - hh,
+                    ix + inner * frac + barW, iy + inner * 0.70f
                 ),
                 white
             )
         }
         canvas.drawRect(
-            RectF(bx + box * 0.18f, by + box * 0.16f, bx + box * 0.82f, by + box * 0.24f),
+            RectF(ix + inner * 0.18f, iy + inner * 0.18f, ix + inner * 0.82f, iy + inner * 0.25f),
             white
         )
-
-        val fs = box * 0.34f
-        val namePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = BLOCK_LOGO_BLUE
-            textSize = fs
-            typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
-            textAlign = Paint.Align.CENTER
-        }
-        val cx = x + lw / 2f
-        canvas.drawText("中国", cx, by + box * 0.92f + fs * 1.35f, namePaint)
-        canvas.drawText("建筑", cx, by + box * 0.92f + fs * 2.45f, namePaint)
     }
 
     // ------------------------------------------------------------------ 白卡 / 时间条 / 角标

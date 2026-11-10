@@ -169,205 +169,160 @@ fun CaptureScreen(
         }
     }
 
-    BoxWithConstraints(modifier = Modifier.fillMaxSize().background(Color.Black)) {
-        val portrait = maxWidth <= maxHeight
-        val previewModifier =
-            if (portrait) Modifier.fillMaxHeight().aspectRatio(3f / 4f)
-            else Modifier.fillMaxWidth().aspectRatio(4f / 3f)
+    Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
+        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+            val portrait = maxWidth <= maxHeight
 
-        // 取景区与照片严格同比例（4:3），水印层由 WatermarkRenderer 同一套代码渲染，
-        // 位置、字号、配色与成品一致——界面所见即拍出结果。
-        BoxWithConstraints(modifier = previewModifier.align(Alignment.Center)) {
-            val density = LocalDensity.current
-            val previewW = with(density) { maxWidth.toPx() }.toInt().coerceAtLeast(1)
-            val previewH = with(density) { maxHeight.toPx() }.toInt().coerceAtLeast(1)
-            val overlayW = previewW.coerceIn(240, 900)
-            val overlayH = (overlayW.toFloat() * previewH / previewW).toInt().coerceAtLeast(180)
+            Column(Modifier.fillMaxSize()) {
+                // ============ 取景区：只放画面和水印，不放任何选项
+                BoxWithConstraints(modifier = Modifier.fillMaxWidth().weight(1f)) {
+                    val previewModifier =
+                        if (portrait) Modifier.fillMaxHeight().aspectRatio(3f / 4f)
+                        else Modifier.fillMaxWidth().aspectRatio(4f / 3f)
 
-            preview(Modifier.fillMaxSize())
+                    BoxWithConstraints(modifier = previewModifier.align(Alignment.Center)) {
+                        val density = LocalDensity.current
+                        val previewW = with(density) { maxWidth.toPx() }.toInt().coerceAtLeast(1)
+                        val previewH = with(density) { maxHeight.toPx() }.toInt().coerceAtLeast(1)
+                        val overlayW = previewW.coerceIn(240, 900)
+                        val overlayH = (overlayW.toFloat() * previewH / previewW).toInt().coerceAtLeast(180)
 
-            if (hasPermission) {
-                // 构图参考线（1/3 与 2/3）
-                Row(Modifier.fillMaxSize()) {
-                    Spacer(Modifier.weight(1f))
-                    Box(Modifier.width(0.6.dp).fillMaxHeight().background(Color.White.copy(alpha = 0.10f)))
-                    Spacer(Modifier.weight(1f))
-                    Box(Modifier.width(0.6.dp).fillMaxHeight().background(Color.White.copy(alpha = 0.10f)))
-                    Spacer(Modifier.weight(1f))
-                }
+                        preview(Modifier.fillMaxSize())
 
-                val overlay by produceState<ImageBitmap?>(
-                    initialValue = null,
-                    state.style,
-                    state.fieldValues,
-                    state.captureTime,
-                    overlayW,
-                    overlayH
-                ) {
-                    value = renderOverlay(overlayW, overlayH)?.asImageBitmap()
-                }
-                overlay?.let { bmp ->
-                    Image(
-                        bitmap = bmp,
-                        contentDescription = null,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                }
-            }
-        }
+                        if (hasPermission) {
+                            // 构图参考线（1/3 与 2/3）
+                            Row(Modifier.fillMaxSize()) {
+                                Spacer(Modifier.weight(1f))
+                                Box(Modifier.width(0.6.dp).fillMaxHeight().background(Color.White.copy(alpha = 0.10f)))
+                                Spacer(Modifier.weight(1f))
+                                Box(Modifier.width(0.6.dp).fillMaxHeight().background(Color.White.copy(alpha = 0.10f)))
+                                Spacer(Modifier.weight(1f))
+                            }
 
-        if (hasPermission) {
-            TopBar(
-                projectName = state.currentProject?.name ?: "未选择项目",
-                company = state.currentProject?.company.orEmpty(),
-                flashOn = flashOn,
-                onProjectClick = { showProjectSheet = true },
-                onToggleFlash = {
-                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                    onToggleFlash()
-                },
-                onSwitchLens = onSwitchLens,
-                onWatermarkSettings = { showWatermarkSettings = true },
-                modifier = Modifier.align(Alignment.TopStart)
-            )
-
-            // 模板快捷切换
-            LazyRow(
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .statusBarsPadding()
-                    .padding(top = 64.dp),
-                contentPadding = PaddingValues(horizontal = 14.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                items(templates, key = { it.id }) { tpl ->
-                    val selected = state.currentTemplate?.id == tpl.id
-                    Surface(
-                        shape = RoundedCornerShape(50),
-                        color = if (selected) BrandColors.Primary else Color.White.copy(alpha = 0.14f),
-                        modifier = Modifier.clickable { onSelectTemplate(tpl) }
-                    ) {
-                        Text(
-                            tpl.name,
-                            color = Color.White,
-                            fontSize = 12.sp,
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
-                        )
+                            // 水印层：与成品走同一套渲染代码，所见即所得
+                            val overlay by produceState<ImageBitmap?>(
+                                initialValue = null,
+                                state.style,
+                                state.fieldValues,
+                                state.captureTime,
+                                overlayW,
+                                overlayH
+                            ) {
+                                value = renderOverlay(overlayW, overlayH)?.asImageBitmap()
+                            }
+                            overlay?.let { bmp ->
+                                Image(
+                                    bitmap = bmp,
+                                    contentDescription = null,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            }
+                        }
                     }
-                }
-                item {
-                    Surface(
-                        shape = RoundedCornerShape(50),
-                        color = Color.White.copy(alpha = 0.08f),
-                        modifier = Modifier.clickable { showTemplateSheet = true }
-                    ) {
-                        Row(
-                            Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically
+
+                    if (hasPermission) {
+                        TopBar(
+                            projectName = state.currentProject?.name ?: "未选择项目",
+                            company = state.currentProject?.company.orEmpty(),
+                            flashOn = flashOn,
+                            onProjectClick = { showProjectSheet = true },
+                            onToggleFlash = {
+                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                onToggleFlash()
+                            },
+                            onSwitchLens = onSwitchLens,
+                            onWatermarkSettings = { showWatermarkSettings = true },
+                            modifier = Modifier.align(Alignment.TopStart)
+                        )
+
+                        // 保存中遮罩
+                        AnimatedVisibility(
+                            visible = state.feedback.isSaving,
+                            enter = fadeIn(),
+                            exit = fadeOut(),
+                            modifier = Modifier.align(Alignment.Center)
                         ) {
-                            Icon(
-                                Icons.Default.Tune,
-                                contentDescription = "模板管理",
-                                tint = Color.White,
-                                modifier = Modifier.size(14.dp)
-                            )
-                            Spacer(Modifier.width(4.dp))
-                            Text("管理", color = Color.White, fontSize = 12.sp)
+                            Surface(
+                                shape = RoundedCornerShape(20.dp),
+                                color = Color.Black.copy(alpha = 0.72f)
+                            ) {
+                                Row(
+                                    Modifier.padding(horizontal = 20.dp, vertical = 14.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(18.dp),
+                                        strokeWidth = 2.dp,
+                                        color = BrandColors.Primary
+                                    )
+                                    Spacer(Modifier.width(12.dp))
+                                    Text("正在生成水印…", color = Color.White, fontSize = 13.sp)
+                                }
+                            }
+                        }
+
+                        // 结果胶囊
+                        AnimatedVisibility(
+                            visible = state.feedback.banner != null,
+                            enter = fadeIn(),
+                            exit = fadeOut(),
+                            modifier = Modifier
+                                .align(Alignment.TopCenter)
+                                .statusBarsPadding()
+                                .padding(top = 58.dp)
+                        ) {
+                            val ok = state.feedback.bannerOk
+                            Surface(
+                                shape = RoundedCornerShape(50),
+                                color = if (ok) BrandColors.Success.copy(alpha = 0.94f)
+                                else BrandColors.Danger.copy(alpha = 0.94f)
+                            ) {
+                                Row(
+                                    Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        if (ok) Icons.Default.Check else Icons.Default.Close,
+                                        contentDescription = null,
+                                        tint = Color.White,
+                                        modifier = Modifier.size(15.dp)
+                                    )
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(
+                                        state.feedback.banner.orEmpty(),
+                                        color = Color.White,
+                                        fontSize = 13.sp,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
                         }
                     }
                 }
-            }
 
-            // 字段快捷胶囊
-            if (state.currentFields.isNotEmpty()) {
-                FieldQuickBar(
-                    fields = state.currentFields,
-                    values = state.fieldValues,
-                    onPickField = { pickingField = it },
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(bottom = 156.dp)
-                )
-            }
-
-            BottomControls(
-                state = state,
-                thumbPath = state.feedback.lastThumb
-                    ?: recentPhotos.firstOrNull()?.watermarkedUri,
-                onShutter = {
-                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                    flashTick++
-                    onShutter()
-                },
-                onThumbClick = {
-                    onOpenGallery()
-                    showGallery = true
-                },
-                onManageClick = { showTemplateSheet = true },
-                modifier = Modifier.align(Alignment.BottomCenter)
-            )
-
-            // 保存中遮罩
-            AnimatedVisibility(
-                visible = state.feedback.isSaving,
-                enter = fadeIn(),
-                exit = fadeOut(),
-                modifier = Modifier.align(Alignment.Center)
-            ) {
-                Surface(
-                    shape = RoundedCornerShape(20.dp),
-                    color = Color.Black.copy(alpha = 0.72f)
-                ) {
-                    Row(
-                        Modifier.padding(horizontal = 20.dp, vertical = 14.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(18.dp),
-                            strokeWidth = 2.dp,
-                            color = BrandColors.Primary
-                        )
-                        Spacer(Modifier.width(12.dp))
-                        Text("正在生成水印…", color = Color.White, fontSize = 13.sp)
-                    }
-                }
-            }
-
-            // 结果胶囊
-            AnimatedVisibility(
-                visible = state.feedback.banner != null,
-                enter = fadeIn(),
-                exit = fadeOut(),
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .statusBarsPadding()
-                    .padding(top = 112.dp)
-            ) {
-                val ok = state.feedback.bannerOk
-                Surface(
-                    shape = RoundedCornerShape(50),
-                    color = if (ok) BrandColors.Success.copy(alpha = 0.94f)
-                    else BrandColors.Danger.copy(alpha = 0.94f)
-                ) {
-                    Row(
-                        Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            if (ok) Icons.Default.Check else Icons.Default.Close,
-                            contentDescription = null,
-                            tint = Color.White,
-                            modifier = Modifier.size(15.dp)
-                        )
-                        Spacer(Modifier.width(6.dp))
-                        Text(
-                            state.feedback.banner.orEmpty(),
-                            color = Color.White,
-                            fontSize = 13.sp,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
+                // ============ 底部控制面板：模板、字段、快门全部落在这一块，绝不压取景画面
+                if (hasPermission) {
+                    BottomPanel(
+                        state = state,
+                        templates = templates,
+                        thumbPath = state.feedback.lastThumb
+                            ?: recentPhotos.firstOrNull()?.watermarkedUri,
+                        portrait = portrait,
+                        onSelectTemplate = onSelectTemplate,
+                        onManageTemplates = { showTemplateSheet = true },
+                        onPickField = { pickingField = it },
+                        onShutter = {
+                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                            flashTick++
+                            onShutter()
+                        },
+                        onThumbClick = {
+                            onOpenGallery()
+                            showGallery = true
+                        },
+                        onWatermarkSettings = { showWatermarkSettings = true }
+                    )
                 }
             }
         }
@@ -648,38 +603,96 @@ private fun FieldQuickBar(
 // ---------------------------------------------------------------------- 快门与底部
 
 @Composable
-private fun BottomControls(
+private fun BottomPanel(
     state: CameraState,
+    templates: List<Template>,
     thumbPath: String?,
+    portrait: Boolean,
+    onSelectTemplate: (Template) -> Unit,
+    onManageTemplates: () -> Unit,
+    onPickField: (TemplateField) -> Unit,
     onShutter: () -> Unit,
     onThumbClick: () -> Unit,
-    onManageClick: () -> Unit,
-    modifier: Modifier = Modifier
+    onWatermarkSettings: () -> Unit
 ) {
     val context = LocalContext.current
     Column(
-        modifier = modifier
+        modifier = Modifier
             .fillMaxWidth()
+            .background(BrandColors.Surface)
             .navigationBarsPadding()
-            .background(
-                Brush.verticalGradient(
-                    listOf(Color.Transparent, Color.Black.copy(alpha = 0.78f))
-                )
-            )
-            .padding(top = 26.dp, bottom = 16.dp)
+            .padding(top = 12.dp, bottom = 12.dp)
     ) {
+        // 模板切换（横屏时收起，从"管理"进，给取景区让高度）
+        if (portrait && templates.isNotEmpty()) {
+            LazyRow(
+                modifier = Modifier.fillMaxWidth(),
+                contentPadding = PaddingValues(horizontal = 14.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(templates, key = { it.id }) { tpl ->
+                    val selected = state.currentTemplate?.id == tpl.id
+                    Surface(
+                        shape = RoundedCornerShape(50),
+                        color = if (selected) BrandColors.Primary else Color.White.copy(alpha = 0.10f),
+                        modifier = Modifier.clickable { onSelectTemplate(tpl) }
+                    ) {
+                        Text(
+                            tpl.name,
+                            color = if (selected) Color.White else BrandColors.TextPrimary,
+                            fontSize = 12.sp,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                        )
+                    }
+                }
+                item {
+                    Surface(
+                        shape = RoundedCornerShape(50),
+                        color = Color.White.copy(alpha = 0.06f),
+                        modifier = Modifier.clickable { onManageTemplates() }
+                    ) {
+                        Row(
+                            Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.Default.Tune,
+                                contentDescription = "模板管理",
+                                tint = BrandColors.TextSecondary,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text("管理", color = BrandColors.TextSecondary, fontSize = 12.sp)
+                        }
+                    }
+                }
+            }
+            Spacer(Modifier.height(10.dp))
+        }
+
+        // 字段快捷选择：全部落在面板里，不再浮在取景画面上
+        if (state.currentFields.isNotEmpty()) {
+            FieldQuickBar(
+                fields = state.currentFields,
+                values = state.fieldValues,
+                onPickField = onPickField,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(Modifier.height(12.dp))
+        }
+
+        // 快门行
         Row(
-            Modifier.fillMaxWidth(),
+            Modifier.fillMaxWidth().padding(horizontal = 28.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Center
+            horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            // 最近一张
             Box(
                 Modifier
-                    .size(52.dp)
+                    .size(48.dp)
                     .clip(RoundedCornerShape(10.dp))
-                    .background(Color.White.copy(alpha = 0.12f))
-                    .border(1.dp, Color.White.copy(alpha = 0.35f), RoundedCornerShape(10.dp))
+                    .background(Color.White.copy(alpha = 0.10f))
+                    .border(1.dp, Color.White.copy(alpha = 0.30f), RoundedCornerShape(10.dp))
                     .clickable { onThumbClick() },
                 contentAlignment = Alignment.Center
             ) {
@@ -702,24 +715,19 @@ private fun BottomControls(
                 }
             }
 
-            Spacer(Modifier.width(38.dp))
-
             ShutterButton(isSaving = state.feedback.isSaving, onClick = onShutter)
 
-            Spacer(Modifier.width(38.dp))
-
-            // 模板/字段管理
             Box(
                 Modifier
-                    .size(52.dp)
+                    .size(48.dp)
                     .clip(RoundedCornerShape(10.dp))
                     .background(Color.White.copy(alpha = 0.10f))
-                    .clickable { onManageClick() },
+                    .clickable { onWatermarkSettings() },
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    Icons.Default.Tune,
-                    contentDescription = "模板",
+                    Icons.Default.Palette,
+                    contentDescription = "水印设置",
                     tint = Color.White,
                     modifier = Modifier.size(20.dp)
                 )
