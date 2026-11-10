@@ -150,8 +150,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             assetLogo()
         } else {
             try {
-                android.graphics.BitmapFactory.decodeFile(path) ?: assetLogo()
-            } catch (_: Exception) {
+                val o = android.graphics.BitmapFactory.Options().apply {
+                    inPreferredConfig = android.graphics.Bitmap.Config.ARGB_8888
+                }
+                android.graphics.BitmapFactory.decodeFile(path, o) ?: assetLogo()
+            } catch (_: Throwable) {
                 assetLogo()
             }
         }
@@ -172,24 +175,78 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** 从相册导入 logo：复制进应用私有目录，避免原图被删后水印失效。 */
+    /**
+     * 从相册导入 logo。
+     *
+     * 必须在这里就做"采样 + 居中进 512 方图 + 存 PNG"：
+     * 直接拷原图会在渲染时解码上千万像素、极易 OOM 或超时，表现出来就是"选了没反应"。
+     */
     fun importLogo(uri: android.net.Uri) {
         val app = getApplication<Application>()
         viewModelScope.launch(Dispatchers.IO) {
             try {
+                val bounds = android.graphics.BitmapFactory.Options().apply {
+                    inJustDecodeBounds = true
+                }
+                app.contentResolver.openInputStream(uri)?.use {
+                    android.graphics.BitmapFactory.decodeStream(it, null, bounds)
+                }
+                if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
+                    throw IllegalStateException("无法读取该图片")
+                }
+
+                var sample = 1
+                while (bounds.outWidth / sample > 1024 || bounds.outHeight / sample > 1024) {
+                    sample *= 2
+                }
+                val opts = android.graphics.BitmapFactory.Options().apply {
+                    inSampleSize = sample
+                    inPreferredConfig = android.graphics.Bitmap.Config.ARGB_8888
+                }
+                val src = app.contentResolver.openInputStream(uri)?.use {
+                    android.graphics.BitmapFactory.decodeStream(it, null, opts)
+                } ?: throw IllegalStateException("图片解码失败")
+
+                val maxSide = 512
+                val scale = minOf(
+                    maxSide.toFloat() / src.width,
+                    maxSide.toFloat() / src.height,
+                    1f
+                )
+                val dw = (src.width * scale).toInt().coerceAtLeast(1)
+                val dh = (src.height * scale).toInt().coerceAtLeast(1)
+                val squared = android.graphics.Bitmap.createBitmap(
+                    maxSide, maxSide, android.graphics.Bitmap.Config.ARGB_8888
+                )
+                android.graphics.Canvas(squared).drawBitmap(
+                    src, null,
+                    android.graphics.RectF(
+                        (maxSide - dw) / 2f, (maxSide - dh) / 2f,
+                        (maxSide + dw) / 2f, (maxSide + dh) / 2f
+                    ),
+                    android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG)
+                )
+                if (squared !== src) src.recycle()
+
                 val dir = File(app.filesDir, "logos").apply { mkdirs() }
                 dir.listFiles()?.forEach { it.delete() }
                 val dest = File(dir, "logo_" + System.currentTimeMillis() + ".png")
-                app.contentResolver.openInputStream(uri)?.use { input ->
-                    dest.outputStream().use { out -> input.copyTo(out) }
+                dest.outputStream().use { out ->
+                    squared.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, out)
                 }
+                squared.recycle()
+
                 cachedLogoPath = "\u0000"
+                cachedLogo = null
                 withContext(Dispatchers.Main) {
                     updateStyle(_cameraState.value.style.copy(logoPath = dest.absolutePath))
+                    showBanner("logo 已更新", true)
                 }
             } catch (t: Throwable) {
                 android.util.Log.e("SiteStamp", "importLogo failed", t)
-                withContext(Dispatchers.Main) { showBanner("logo 导入失败", false) }
+                withContext(Dispatchers.Main) {
+                    showBanner("logo 导入失败：" + (t.message ?: "未知错误"), false)
+                }
             }
         }
     }

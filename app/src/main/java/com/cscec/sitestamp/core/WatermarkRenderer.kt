@@ -179,18 +179,20 @@ object WatermarkRenderer {
      * 结构照现场通用的工程水印模板，直角、不透明，缩略图里也一眼能认出。
      */
     private fun drawBlock(canvas: Canvas, w: Int, h: Int, data: WatermarkData) {
-        val bodyS = h * 0.0185f
-        val titleS = h * 0.0232f
-        val footS = h * 0.0190f
-
+        // 尺寸全部按卡片宽度归一化：换画幅时版式比例不变
         val cardW = w * 0.68f
-        val marginX = w * 0.030f
-        val marginBottom = h * 0.030f
-        val headerH = h * 0.048f
-        val footH = h * 0.042f
-        val rowH = h * 0.038f
-        val padIn = h * 0.012f
-        val radius = cardW * 0.028f
+        val marginX = w * 0.026f
+        val marginBottom = h * 0.026f
+        val headerH = cardW * 0.145f
+        val footH = cardW * 0.082f
+        val rowH = cardW * 0.085f
+        val padIn = cardW * 0.030f
+        val radius = cardW * 0.020f
+
+        val titleS = headerH * 0.46f
+        val bodyS = rowH * 0.46f
+        val labelS = rowH * 0.42f
+        val footS = footH * 0.50f
 
         val boldFace = Typeface.create("sans-serif-medium", Typeface.BOLD)
         val normalFace = Typeface.create("sans-serif", Typeface.NORMAL)
@@ -213,17 +215,17 @@ object WatermarkRenderer {
         if (addr.isNotEmpty()) rows.add("地\u3000点" to addr)
         if (rows.isEmpty()) return
 
-        // logo 尺寸决定标题起点（不再占一整个竖栏，卡片更紧凑）
-        val logoSize = headerH * 0.60f
-        val leftPad = marginX + padIn
-        val contentX = leftPad + logoSize + padIn * 1.1f
+        // logo 白方块：与标题条等高，标题文字排在它右侧（参考图的做法）
+        val logoBox = headerH
+        val leftPad = marginX + padIn * 0.8f
+        val contentX = marginX + logoBox + padIn
 
         var labelW = 0f
-        measure.textSize = bodyS
+        measure.textSize = labelS
         measure.typeface = boldFace
         for ((label, _) in rows) labelW = max(labelW, measure.measureText(label))
-        labelW += h * 0.014f
-        val valueMaxW = max(cardW - padIn * 2f - labelW, cardW * 0.30f)
+        labelW += cardW * 0.020f
+        val valueMaxW = max(cardW - padIn * 2f - labelW - logoBox * 0.05f, cardW * 0.30f)
 
         measure.typeface = normalFace
         val laid = ArrayList<Pair<String, List<String>>>()
@@ -242,16 +244,22 @@ object WatermarkRenderer {
         val cardTop = cardBottom - cardH
         val cardRect = RectF(marginX, cardTop, cardRight, cardBottom)
 
-        // ---- 圆角底板：三段色统一裁进圆角，四角才一致
+        // ---- 投影（先落影，再画卡面）
+        canvas.drawRoundRect(
+            cardRect, radius, radius,
+            Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = Color.TRANSPARENT
+                setShadowLayer(radius * 1.6f, 0f, radius * 0.5f, Color.argb(64, 0, 0, 0))
+            }
+        )
+
+        // ---- 圆角底板：三段色统一裁进圆角
         canvas.save()
         val clip = Path().apply {
             addRoundRect(cardRect, radius, radius, Path.Direction.CW)
         }
         canvas.clipPath(clip)
-        canvas.drawRect(
-            cardRect,
-            Paint(Paint.ANTI_ALIAS_FLAG).apply { color = data.bgArgb }
-        )
+        canvas.drawRect(cardRect, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = data.bgArgb })
         canvas.drawRect(
             RectF(marginX, cardTop, cardRight, cardTop + headerH),
             Paint(Paint.ANTI_ALIAS_FLAG).apply { color = data.primaryColor }
@@ -262,20 +270,10 @@ object WatermarkRenderer {
         )
         canvas.restore()
 
-        // 细描边，边界更干净
-        canvas.drawRoundRect(
-            cardRect, radius, radius,
-            Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                style = Paint.Style.STROKE
-                strokeWidth = max(1.5f, h * 0.0006f)
-                color = Color.argb(44, 255, 255, 255)
-            }
-        )
-
         val ink = inkOn(data.bgArgb, data.textColor)
         val headInk = inkOn(data.primaryColor, null)
 
-        drawLogoOnBar(canvas, leftPad, cardTop + (headerH - logoSize) / 2f, logoSize, data.logo)
+        drawLogoBox(canvas, marginX, cardTop, logoBox, headerH, data.logo)
 
         // ---- 标题
         val text = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -287,18 +285,19 @@ object WatermarkRenderer {
             cardTop + headerH / 2f + titleS * 0.36f, text
         )
 
-        // ---- 字段区（标签与值同基线、两栏对齐）
+        // ---- 字段区
         var y = cardTop + headerH + padIn
         for ((label, lines) in laid) {
-            text.textSize = bodyS
+            text.textSize = labelS
             text.typeface = boldFace
             text.color = ink
-            canvas.drawText(label, leftPad, y + rowH * 0.52f + bodyS * 0.36f, text)
+            canvas.drawText(label, marginX + padIn, y + rowH * 0.52f + labelS * 0.36f, text)
 
+            text.textSize = bodyS
             text.typeface = normalFace
             var vy = y + rowH * 0.52f + bodyS * 0.36f
             for (line in lines) {
-                canvas.drawText(line, leftPad + labelW, vy, text)
+                canvas.drawText(line, marginX + padIn + labelW, vy, text)
                 vy += rowH
             }
             y += rowH * lines.size
@@ -318,36 +317,35 @@ object WatermarkRenderer {
     }
 
     /**
-     * 标题条上的 logo：白色圆角底 + 图片（或占位图形）。
-     * 刻意不用直角白衬底——那会在卡片左上角形成台阶，破坏圆角。
+     * 标题条左端的 logo 白方块：与标题条等高，图片等比内嵌。
+     * 参考现场的通用工程水印做法——白底方块卡在蓝条左端，圆角由卡片统一裁出。
      */
-    private fun drawLogoOnBar(canvas: Canvas, left: Float, top: Float, size: Float, logo: Bitmap?) {
-        val r = size * 0.26f
-        canvas.drawRoundRect(
-            RectF(left, top, left + size, top + size), r, r,
+    private fun drawLogoBox(
+        canvas: Canvas, left: Float, top: Float, boxW: Float, boxH: Float, logo: Bitmap?
+    ) {
+        canvas.drawRect(
+            RectF(left, top, left + boxW, top + boxH),
             Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE }
         )
-        val inner = size * 0.66f
-        val ix = left + (size - inner) / 2f
-        val iy = top + (size - inner) / 2f
+        val inner = minOf(boxW, boxH) * 0.76f
+        val ix = left + (boxW - inner) / 2f
+        val iy = top + (boxH - inner) / 2f
 
         if (logo != null) {
-            val logoClip = Path().apply {
-                addRoundRect(
-                    RectF(ix, iy, ix + inner, iy + inner),
-                    inner * 0.14f, inner * 0.14f, Path.Direction.CW
-                )
-            }
-            canvas.save()
-            canvas.clipPath(logoClip)
+            // 等比缩放并居中，不拉伸变形
+            val scale = minOf(inner / logo.width, inner / logo.height)
+            val dw = logo.width * scale
+            val dh = logo.height * scale
+            val dl = ix + (inner - dw) / 2f
+            val dt = iy + (inner - dh) / 2f
             canvas.drawBitmap(
-                logo, null, RectF(ix, iy, ix + inner, iy + inner),
+                logo, null, RectF(dl, dt, dl + dw, dt + dh),
                 Paint(Paint.FILTER_BITMAP_FLAG)
             )
-            canvas.restore()
             return
         }
 
+        // 无素材时的占位：蓝块 + 建筑抽象线
         canvas.drawRect(
             RectF(ix, iy, ix + inner, iy + inner * 0.90f),
             Paint(Paint.ANTI_ALIAS_FLAG).apply { color = BLOCK_LOGO_BLUE }
@@ -369,22 +367,6 @@ object WatermarkRenderer {
             RectF(ix + inner * 0.18f, iy + inner * 0.18f, ix + inner * 0.82f, iy + inner * 0.25f),
             white
         )
-    }
-
-    /** 通用 logo 徽标：等比绘制；没有素材时画一个蓝块占位，保证版式不塌。 */
-    private fun drawLogoBadge(canvas: Canvas, left: Float, top: Float, size: Float, logo: Bitmap?) {
-        if (logo != null) {
-            canvas.drawBitmap(
-                logo, null,
-                RectF(left, top, left + size, top + size),
-                Paint(Paint.FILTER_BITMAP_FLAG)
-            )
-        } else {
-            canvas.drawRect(
-                RectF(left, top, left + size, top + size),
-                Paint(Paint.ANTI_ALIAS_FLAG).apply { color = BLOCK_LOGO_BLUE }
-            )
-        }
     }
 
     // ------------------------------------------------------------------ 白卡 / 时间条 / 角标
