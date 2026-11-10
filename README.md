@@ -87,6 +87,7 @@ APK 输出：`app/build/outputs/apk/debug/app-debug.apk`
 
 ## 版本
 
+- **v1.6**（versionCode 7）：新增 82 个 JVM 单元测试并纳入 CI 的 `testDebugUnitTest`，修复 `yyyy-MM-dd` 格式的 EXIF 拍摄时间被错误写成当前系统时间的问题，配置 release 签名并在推送 `v*` tag 时自动构建签名 APK 发布到 GitHub Release
 - **v1.5**（versionCode 6）：水印全可配置（5 种版式 / 底色 / 透明度 / 主色 / 文字色 / logo / 字段）+ 三段式工程水印与天气 + M3 界面交互重做（沉浸式取景、快门反馈、字段快捷选项）
 - **v1.2**（versionCode 3）：补完 M1 闭环 + 模板管理 + 照片记录
 - v1.1（versionCode 2）：修复拍照存不住、地址不解析、切项目复制数据、EXIF 未写等 7 项缺陷
