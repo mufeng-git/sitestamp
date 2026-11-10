@@ -22,3 +22,4 @@ Thumbs.db
 
 # APK artifacts (downloaded from CI, not source)
 /apk_artifacts/
+/*.apk
