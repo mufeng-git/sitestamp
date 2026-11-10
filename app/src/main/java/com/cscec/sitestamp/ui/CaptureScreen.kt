@@ -236,7 +236,7 @@ fun CaptureScreen(
                         )
 
                         // 保存中遮罩
-                        AnimatedVisibility(
+                        androidx.compose.animation.AnimatedVisibility(
                             visible = state.feedback.isSaving,
                             enter = fadeIn(),
                             exit = fadeOut(),
@@ -262,7 +262,7 @@ fun CaptureScreen(
                         }
 
                         // 结果胶囊
-                        AnimatedVisibility(
+                        androidx.compose.animation.AnimatedVisibility(
                             visible = state.feedback.banner != null,
                             enter = fadeIn(),
                             exit = fadeOut(),

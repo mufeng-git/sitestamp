@@ -371,6 +371,22 @@ object WatermarkRenderer {
         )
     }
 
+    /** 通用 logo 徽标：等比绘制；没有素材时画一个蓝块占位，保证版式不塌。 */
+    private fun drawLogoBadge(canvas: Canvas, left: Float, top: Float, size: Float, logo: Bitmap?) {
+        if (logo != null) {
+            canvas.drawBitmap(
+                logo, null,
+                RectF(left, top, left + size, top + size),
+                Paint(Paint.FILTER_BITMAP_FLAG)
+            )
+        } else {
+            canvas.drawRect(
+                RectF(left, top, left + size, top + size),
+                Paint(Paint.ANTI_ALIAS_FLAG).apply { color = BLOCK_LOGO_BLUE }
+            )
+        }
+    }
+
     // ------------------------------------------------------------------ 白卡 / 时间条 / 角标
 
     /** 天气 + 坐标 + 地址合成一行次要信息。 */
