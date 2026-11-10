@@ -17,6 +17,24 @@ android {
         versionName = "1.5"
     }
 
+    // CI 会把 ANDROID_KEYSTORE_BASE64 解码到临时文件，并通过 ANDROID_KEYSTORE_FILE 传入路径；
+    // 本地开发通常没有该变量，此时不创建 release 签名配置，assembleRelease 仍然可以正常构建。
+    val releaseKeystore = System.getenv("ANDROID_KEYSTORE_FILE")
+        ?.takeIf { it.isNotBlank() }
+        ?.let { file(it) }
+        ?.takeIf { it.exists() }
+
+    signingConfigs {
+        if (releaseKeystore != null) {
+            create("release") {
+                storeFile = releaseKeystore
+                storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("ANDROID_KEY_ALIAS")
+                keyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         debug {
             isMinifyEnabled = false
@@ -24,6 +42,9 @@ android {
         release {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            if (releaseKeystore != null) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
 
