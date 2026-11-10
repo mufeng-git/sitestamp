@@ -17,6 +17,8 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
@@ -81,6 +83,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -131,6 +134,7 @@ fun CaptureScreen(
     onDismissBanner: () -> Unit,
     onRequestPermission: () -> Unit,
     watermarkStyle: WatermarkStyle,
+    renderOverlay: suspend (Int, Int) -> android.graphics.Bitmap?,
     onStyleChange: (WatermarkStyle) -> Unit,
     onLogoPicked: (Uri) -> Unit,
     onClearLogo: () -> Unit,
@@ -164,19 +168,54 @@ fun CaptureScreen(
         }
     }
 
-    Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
-        preview(Modifier.fillMaxSize())
+    BoxWithConstraints(modifier = Modifier.fillMaxSize().background(Color.Black)) {
+        val portrait = maxWidth <= maxHeight
+        val previewModifier =
+            if (portrait) Modifier.fillMaxHeight().aspectRatio(3f / 4f)
+            else Modifier.fillMaxWidth().aspectRatio(4f / 3f)
+
+        // 取景区与照片严格同比例（4:3），水印层由 WatermarkRenderer 同一套代码渲染，
+        // 位置、字号、配色与成品一致——界面所见即拍出结果。
+        BoxWithConstraints(modifier = previewModifier.align(Alignment.Center)) {
+            val density = LocalDensity.current
+            val previewW = with(density) { maxWidth.toPx() }.toInt().coerceAtLeast(1)
+            val previewH = with(density) { maxHeight.toPx() }.toInt().coerceAtLeast(1)
+            val overlayW = previewW.coerceIn(240, 900)
+            val overlayH = (overlayW.toFloat() * previewH / previewW).toInt().coerceAtLeast(180)
+
+            preview(Modifier.fillMaxSize())
+
+            if (hasPermission) {
+                // 构图参考线（1/3 与 2/3）
+                Row(Modifier.fillMaxSize()) {
+                    Spacer(Modifier.weight(1f))
+                    Box(Modifier.width(0.6.dp).fillMaxHeight().background(Color.White.copy(alpha = 0.10f)))
+                    Spacer(Modifier.weight(1f))
+                    Box(Modifier.width(0.6.dp).fillMaxHeight().background(Color.White.copy(alpha = 0.10f)))
+                    Spacer(Modifier.weight(1f))
+                }
+
+                val overlay by produceState<ImageBitmap?>(
+                    initialValue = null,
+                    state.style,
+                    state.fieldValues,
+                    state.captureTime,
+                    overlayW,
+                    overlayH
+                ) {
+                    value = renderOverlay(overlayW, overlayH)?.asImageBitmap()
+                }
+                overlay?.let { bmp ->
+                    Image(
+                        bitmap = bmp,
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+            }
+        }
 
         if (hasPermission) {
-            // 构图参考线（1/3 与 2/3）
-            Row(Modifier.fillMaxSize()) {
-                Spacer(Modifier.weight(1f))
-                Box(Modifier.width(0.6.dp).fillMaxHeight().background(Color.White.copy(alpha = 0.10f)))
-                Spacer(Modifier.weight(1f))
-                Box(Modifier.width(0.6.dp).fillMaxHeight().background(Color.White.copy(alpha = 0.10f)))
-                Spacer(Modifier.weight(1f))
-            }
-
             TopBar(
                 projectName = state.currentProject?.name ?: "未选择项目",
                 company = state.currentProject?.company.orEmpty(),
@@ -237,14 +276,6 @@ fun CaptureScreen(
                     }
                 }
             }
-
-            // 水印实时预览（左下角，与成品卡片同构）
-            WatermarkPreviewCard(
-                state = state,
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .padding(start = 14.dp, bottom = 216.dp)
-            )
 
             // 字段快捷胶囊
             if (state.currentFields.isNotEmpty()) {
@@ -399,6 +430,10 @@ fun CaptureScreen(
                 showTemplateSheet = false
                 showCreateTemplate = true
             },
+            onOpenWatermarkSettings = {
+                showTemplateSheet = false
+                showWatermarkSettings = true
+            },
             onDismiss = { showTemplateSheet = false }
         )
     }
@@ -551,132 +586,6 @@ private fun RoundIconButton(onClick: () -> Unit, content: @Composable () -> Unit
 
 // ---------------------------------------------------------------------- 水印预览
 
-@Composable
-private fun WatermarkPreviewCard(state: CameraState, modifier: Modifier = Modifier) {
-    // 与 WatermarkRenderer.drawBlock 同构：白底 logo 竖栏 + 蓝标题条 + 灰字段区 + 蓝落款条
-    val cardW = 292.dp
-    val filled = state.currentFields
-        .map { spreadLabel(it.label) to state.fieldValues[it.fieldKey].orEmpty() }
-        .filter { it.second.isNotBlank() }
-    val address = state.addressText.replace("地址：", "").trim()
-    val builder = state.currentProject?.company?.takeIf { it.isNotBlank() }
-        ?: "中建国际建设有限公司"
-    val primary = Color(0xFF000000.toInt() or state.style.primaryColor)
-    val bgTone = Color(0xFF000000.toInt() or state.style.bgColor)
-        .copy(alpha = state.style.bgAlpha / 255f)
-    val inkTone = if (state.style.textColor != 0) {
-        Color(0xFF000000.toInt() or state.style.textColor)
-    } else {
-        val lum = (0.299 * ((state.style.bgColor shr 16) and 0xFF) +
-            0.587 * ((state.style.bgColor shr 8) and 0xFF) +
-            0.114 * (state.style.bgColor and 0xFF)) / 255.0
-        if (lum > 0.62) Color(0xFF181A1E) else Color.White
-    }
-
-    Column(
-        modifier = modifier
-            .width(cardW)
-            .clip(RoundedCornerShape(2.dp))
-    ) {
-        Row(Modifier.fillMaxWidth().height(44.dp)) {
-            Box(
-                Modifier
-                    .fillMaxHeight()
-                    .width(cardW * 0.20f)
-                    .background(Color(0xFFFAFAFA)),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Box(
-                        Modifier
-                            .size(15.dp)
-                            .clip(RoundedCornerShape(2.dp))
-                            .background(Color(0xFF007DB4))
-                    )
-                    Spacer(Modifier.height(2.dp))
-                    Text(
-                        "中国建筑",
-                        color = Color(0xFF007DB4),
-                        fontSize = 7.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            }
-            Box(
-                Modifier
-                    .fillMaxHeight()
-                    .weight(1f)
-                    .background(primary),
-                contentAlignment = Alignment.CenterStart
-            ) {
-                Text(
-                    state.currentProject?.name ?: "未选择项目",
-                    color = Color.White,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(horizontal = 9.dp)
-                )
-            }
-        }
-
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .background(bgTone)
-                .padding(horizontal = 9.dp, vertical = 5.dp)
-        ) {
-            val ink = inkTone
-            filled.forEach { (label, value) ->
-                PreviewRow(label, value, ink)
-            }
-            PreviewRow("拍摄时间", state.captureTime, ink)
-            if (state.weatherText.isNotBlank()) PreviewRow("天\u3000气", state.weatherText, ink)
-            if (address.isNotBlank() && address != "不可用") {
-                PreviewRow("地\u3000点", address, ink, maxLines = 2)
-            }
-        }
-
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .height(28.dp)
-                .background(primary),
-            contentAlignment = Alignment.CenterStart
-        ) {
-            Text(
-                "施工单位：$builder",
-                color = Color.White,
-                fontSize = 10.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(horizontal = 9.dp)
-            )
-        }
-    }
-}
-
-@Composable
-private fun PreviewRow(label: String, value: String, ink: Color, maxLines: Int = 1) {
-    Row(Modifier.padding(vertical = 1.5.dp)) {
-        Text(
-            label,
-            color = ink,
-            fontSize = 10.sp,
-            fontWeight = FontWeight.Bold,
-            maxLines = 1,
-            modifier = Modifier.width(54.dp)
-        )
-        Text(
-            value,
-            color = ink,
-            fontSize = 10.sp,
-            maxLines = maxLines,
-            overflow = TextOverflow.Ellipsis
-        )
-    }
-}
 
 /** 两字标签用全角空格撑成四字宽，与渲染端 spreadLabel 保持一致。 */
 private fun spreadLabel(label: String): String {
@@ -1026,6 +935,7 @@ private fun TemplateSheet(
     onSelect: (Template) -> Unit,
     onDelete: (Template) -> Unit,
     onCreate: () -> Unit,
+    onOpenWatermarkSettings: () -> Unit,
     onDismiss: () -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -1086,6 +996,34 @@ private fun TemplateSheet(
                             )
                         }
                     }
+                }
+            }
+            Spacer(Modifier.height(10.dp))
+            Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = Color.White.copy(alpha = 0.08f),
+                modifier = Modifier.fillMaxWidth().clickable { onOpenWatermarkSettings() }
+            ) {
+                Row(
+                    Modifier.padding(horizontal = 12.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.Tune,
+                        contentDescription = null,
+                        tint = BrandColors.Primary,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("水印设置", color = BrandColors.TextPrimary, fontSize = 13.sp)
+                        Text(
+                            "样式 / 底色 / 透明度 / 文字颜色 / logo / 字段",
+                            color = BrandColors.TextSecondary,
+                            fontSize = 11.sp
+                        )
+                    }
+                    Text("修改", color = BrandColors.Primary, fontSize = 12.sp)
                 }
             }
             Spacer(Modifier.height(8.dp))

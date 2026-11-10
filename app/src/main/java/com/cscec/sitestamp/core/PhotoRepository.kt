@@ -46,17 +46,24 @@ class PhotoRepository(private val context: Context) {
 
         val outputFile = if (success) watermarkedFile else originalFile
 
-        // 原图与水印图双存进系统相册；水印失败时只保留原图，避免重复
-        val originalUri = saveToGallery(originalFile, originalFile.name)
-        val watermarkedUri = if (success) {
-            saveToGallery(watermarkedFile, watermarkDisplayName(originalFile.name))
-        } else {
-            originalUri
+        // 只把带水印的成品存进相册：现场不留无水印原图，避免"未盖章"照片外流。
+        val savedUri = saveToGallery(
+            outputFile,
+            if (success) watermarkDisplayName(originalFile.name) else originalFile.name
+        )
+
+        // 渲染成功后删掉私有目录里的原图，省空间也杜绝无水印件残留
+        if (success) {
+            try {
+                originalFile.delete()
+            } catch (_: Exception) {
+                // 删不掉不影响已保存的成品
+            }
         }
 
         return SaveResult(
-            originalUri = originalUri ?: originalFile.absolutePath,
-            watermarkedUri = watermarkedUri ?: outputFile.absolutePath,
+            originalUri = savedUri ?: outputFile.absolutePath,
+            watermarkedUri = savedUri ?: outputFile.absolutePath,
             originalFile = originalFile,
             watermarkedFile = outputFile
         )

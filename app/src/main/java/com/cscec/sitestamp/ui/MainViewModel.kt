@@ -358,8 +358,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun updateField(key: String, value: String) {
-        val current = _cameraState.value.fieldValues
-        _cameraState.value = _cameraState.value.copy(fieldValues = current.apply { put(key, value) })
+        // 必须换新 Map：原地改同一个引用时，预览层拿到的 key 不变，水印就不会重绘
+        val updated = HashMap(_cameraState.value.fieldValues)
+        updated[key] = value
+        _cameraState.value = _cameraState.value.copy(fieldValues = updated)
         rememberValue(key, value)
     }
 
@@ -371,12 +373,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun createOriginalFile(): File = photoRepo.createOriginalFile()
 
-    /** 相机回调里调用：水印渲染 + 存相册 + 写 PhotoRecord，全程 IO 线程。 */
-    suspend fun saveAndRecord(originalFile: File): Boolean = withContext(Dispatchers.IO) {
+    /**
+     * 拍照与实时预览共用的水印数据。
+     * 两侧走同一份数据 + 同一套绘制代码，拍摄界面看到的即成品，不会再出现两套版式。
+     */
+    fun currentWatermarkData(): WatermarkRenderer.WatermarkData? {
         val state = _cameraState.value
-        val project = state.currentProject ?: return@withContext false
+        val project = state.currentProject ?: return null
         val snapshot = location.value
-        val data = WatermarkRenderer.WatermarkData(
+        return WatermarkRenderer.WatermarkData(
             projectName = project.name,
             company = project.company,
             fields = state.currentFields
@@ -398,6 +403,26 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             showTime = state.style.showTime,
             showAddress = state.style.showAddress
         )
+    }
+
+    /** 实时预览：按预览区像素生成透明底水印层。 */
+    suspend fun renderOverlay(width: Int, height: Int): android.graphics.Bitmap? =
+        withContext(Dispatchers.IO) {
+            val data = currentWatermarkData() ?: return@withContext null
+            try {
+                WatermarkRenderer.renderOverlay(width, height, data)
+            } catch (t: Throwable) {
+                android.util.Log.e("SiteStamp", "renderOverlay failed", t)
+                null
+            }
+        }
+
+    /** 相机回调里调用：水印渲染 + 存相册 + 写 PhotoRecord，全程 IO 线程。 */
+    suspend fun saveAndRecord(originalFile: File): Boolean = withContext(Dispatchers.IO) {
+        val state = _cameraState.value
+        val project = state.currentProject ?: return@withContext false
+        val snapshot = location.value
+        val data = currentWatermarkData() ?: return@withContext false
         try {
             val result = photoRepo.saveWatermarked(originalFile, data)
             photoDao.insert(
@@ -446,28 +471,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val project = state.currentProject ?: return null
         val originalFile = photoRepo.createOriginalFile()
         val snapshot = location.value
-        val data = WatermarkRenderer.WatermarkData(
-            projectName = project.name,
-            company = project.company,
-            fields = state.currentFields
-                .filter { it.isVisible }
-                .map { it.fieldKey to (state.fieldValues[it.fieldKey] ?: "") },
-            captureTime = WatermarkRenderer.nowTime(),
-            gpsText = locationRepo.formatGps(snapshot),
-            addressText = locationRepo.formatAddress(snapshot),
-            latitude = snapshot.latitude,
-            longitude = snapshot.longitude,
-            weatherText = if (state.style.showWeather) state.weatherText else "",
-            style = state.style.styleId,
-            logo = currentLogo(),
-            bgArgb = state.style.bgArgb(),
-            primaryColor = state.style.primaryColor,
-            textColor = state.style.textColor.takeIf { it != 0 },
-            showCoords = state.style.showCoords,
-            showGps = state.style.showCoords,
-            showTime = state.style.showTime,
-            showAddress = state.style.showAddress
-        )
+        val data = currentWatermarkData() ?: return null
         return try {
             photoRepo.saveWatermarked(originalFile, data)
         } catch (_: Exception) {

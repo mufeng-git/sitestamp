@@ -136,6 +136,7 @@ class MainActivity : ComponentActivity() {
                     onDismissBanner = { vm.dismissBanner() },
                     onRequestPermission = { requestPermissionsIfNeeded() },
                     watermarkStyle = cameraState.style,
+                    renderOverlay = { w, h -> vm.renderOverlay(w, h) },
                     onStyleChange = { vm.updateStyle(it) },
                     onLogoPicked = { vm.importLogo(it) },
                     onClearLogo = { vm.clearLogo() },

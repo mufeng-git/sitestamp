@@ -108,14 +108,7 @@ object WatermarkRenderer {
         val bitmap = rotateByExif(decoded, originalFile)
         if (bitmap !== decoded) decoded.recycle()
 
-        val canvas = Canvas(bitmap)
-        when (data.style) {
-            STYLE_CARD -> drawCard(canvas, bitmap.width, bitmap.height, data)
-            STYLE_WHITE -> drawWhite(canvas, bitmap.width, bitmap.height, data)
-            STYLE_TIMEBAR -> drawTimeBar(canvas, bitmap.width, bitmap.height, data)
-            STYLE_COMPACT -> drawCompact(canvas, bitmap.width, bitmap.height, data)
-            else -> drawBlock(canvas, bitmap.width, bitmap.height, data)
-        }
+        drawByStyle(Canvas(bitmap), bitmap.width, bitmap.height, data)
 
         FileOutputStream(outputFile).use { fos ->
             bitmap.compress(Bitmap.CompressFormat.JPEG, 94, fos)
@@ -124,6 +117,30 @@ object WatermarkRenderer {
 
         // 写入拍摄时间与 GPS（EXIF 度分秒有理数格式）
         writeExif(outputFile, data)
+    }
+
+    /**
+     * 透明底水印层：拍摄界面实时叠加用。
+     *
+     * 与成品走同一个 [drawByStyle]，只要预览区与照片同比例（4:3 的 EXACT_FIT），
+     * 位置、字号、行距、配色就完全一致——这是"界面所见 = 拍出来"的唯一可靠做法。
+     */
+    fun renderOverlay(width: Int, height: Int, data: WatermarkData): Bitmap {
+        val w = width.coerceAtLeast(1)
+        val h = height.coerceAtLeast(1)
+        val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        drawByStyle(Canvas(bmp), w, h, data)
+        return bmp
+    }
+
+    private fun drawByStyle(canvas: Canvas, w: Int, h: Int, data: WatermarkData) {
+        when (data.style) {
+            STYLE_CARD -> drawCard(canvas, w, h, data)
+            STYLE_WHITE -> drawWhite(canvas, w, h, data)
+            STYLE_TIMEBAR -> drawTimeBar(canvas, w, h, data)
+            STYLE_COMPACT -> drawCompact(canvas, w, h, data)
+            else -> drawBlock(canvas, w, h, data)
+        }
     }
 
     // ------------------------------------------------------------------ 三段式（默认样式）
@@ -273,6 +290,22 @@ object WatermarkRenderer {
         canvas.drawText(footText, contentX, footTop + footH / 2f + footS * 0.36f, text)
     }
 
+    /** 通用 logo 徽标：等比绘制；没有素材时画一个蓝块占位，保证版式不塌。 */
+    private fun drawLogoBadge(canvas: Canvas, left: Float, top: Float, size: Float, logo: Bitmap?) {
+        if (logo != null) {
+            canvas.drawBitmap(
+                logo, null,
+                RectF(left, top, left + size, top + size),
+                Paint(Paint.FILTER_BITMAP_FLAG)
+            )
+        } else {
+            canvas.drawRect(
+                RectF(left, top, left + size, top + size),
+                Paint(Paint.ANTI_ALIAS_FLAG).apply { color = BLOCK_LOGO_BLUE }
+            )
+        }
+    }
+
     /** logo 素材缺失时画占位（蓝块 + 建筑抽象线 + 中国建筑四字），不让竖栏空着。 */
     private fun drawLogo(canvas: Canvas, x: Float, y: Float, lw: Float, lh: Float, logo: Bitmap?) {
         val box = lw * 0.52f
@@ -388,6 +421,9 @@ object WatermarkRenderer {
         canvas.drawRect(RectF(mx, top, right, top + accentH), Paint().apply { color = data.primaryColor })
         canvas.restore()
 
+        val badge = unit * 1.9f
+        drawLogoBadge(canvas, right - pad - badge, top + accentH + pad * 0.5f, badge, data.logo)
+
         val text = Paint(Paint.ANTI_ALIAS_FLAG)
         var y = top + accentH + pad
         text.textSize = titleS
@@ -441,9 +477,15 @@ object WatermarkRenderer {
         val sub = secondaryOn(ink)
         val timeS = h * 0.043f
         val subS = h * 0.017f
-        val padX = w * 0.045f
+        var padX = w * 0.045f
         val boldFace = Typeface.create("sans-serif-medium", Typeface.BOLD)
         val normalFace = Typeface.create("sans-serif", Typeface.NORMAL)
+
+        val barBadge = barH * 0.40f
+        if (data.logo != null) {
+            drawLogoBadge(canvas, padX, top + (barH - barBadge) / 2f, barBadge, data.logo)
+            padX += barBadge + w * 0.014f
+        }
 
         val text = Paint(Paint.ANTI_ALIAS_FLAG)
         text.textSize = timeS
@@ -509,7 +551,9 @@ object WatermarkRenderer {
         val w1 = measure.measureText(line1)
         measure.textSize = s2
         val w2 = max(measure.measureText(line2), measure.measureText(line3))
-        val boxW = minOf(max(w1, w2) + pad * 2f, w - w * 0.056f)
+        val logoB = s1 * 1.35f
+        val logoGap = if (data.logo != null) logoB + pad * 0.8f else 0f
+        val boxW = minOf(max(w1, w2) + pad * 2f + logoGap, w - w * 0.056f)
         val boxH = pad * 2f + s1 * 1.6f + s2 * 1.5f * 2f
         val mx = w * 0.028f
         val mb = h * 0.030f
@@ -527,6 +571,16 @@ object WatermarkRenderer {
             Paint().apply { color = data.primaryColor }
         )
         canvas.restore()
+
+        if (data.logo != null) {
+            drawLogoBadge(
+                canvas,
+                mx + boxW - pad - logoB,
+                top + (boxH - logoB) / 2f,
+                logoB,
+                data.logo
+            )
+        }
 
         val text = Paint(Paint.ANTI_ALIAS_FLAG)
         var y = top + pad
@@ -694,6 +748,9 @@ object WatermarkRenderer {
             color = Color.argb(64, 255, 255, 255)
             strokeWidth = max(1.5f, h * 0.0008f)
         }
+        val cardBadge = unit * 1.9f
+        drawLogoBadge(canvas, cardRight - padH - cardBadge, cardTop + padV, cardBadge, data.logo)
+
         var y = cardTop + padV
 
         for ((row, lines) in drawn) {
