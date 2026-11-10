@@ -3,6 +3,7 @@ name: Build APK
 on:
   push:
     branches: [ main, develop ]
+    tags: [ 'v*' ]
   pull_request:
     branches: [ main, develop ]
   workflow_dispatch:
@@ -26,6 +27,9 @@ jobs:
       - name: Grant execute permission
         run: chmod +x gradlew
 
+      - name: Run unit tests
+        run: ./gradlew :app:testDebugUnitTest --no-daemon
+
       - name: Build Debug APK
         run: ./gradlew :app:assembleDebug --no-daemon
 
@@ -39,6 +43,8 @@ jobs:
   build-release:
     name: Build Release APK
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -54,7 +60,16 @@ jobs:
       - name: Grant execute permission
         run: chmod +x gradlew
 
+      - name: Decode keystore
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > "$RUNNER_TEMP/release.jks"
+
       - name: Build Release APK
+        env:
+          ANDROID_KEYSTORE_FILE: ${{ startsWith(github.ref, 'refs/tags/v') && format('{0}/release.jks', runner.temp) || '' }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: ./gradlew :app:assembleRelease --no-daemon
 
       - name: Upload Release APK artifact
@@ -63,3 +78,18 @@ jobs:
           name: SiteStamp-Release-APK
           path: app/build/outputs/apk/release/*.apk
           if-no-files-found: warn
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="$GITHUB_REF_NAME"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" app/build/outputs/apk/release/*.apk --clobber
+          else
+            gh release create "$tag" app/build/outputs/apk/release/*.apk \
+              --title "$tag" \
+              --generate-notes \
+              --verify-tag
+          fi
