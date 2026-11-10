@@ -13,8 +13,8 @@ android {
         applicationId = "com.cscec.sitestamp"
         minSdk = 26
         targetSdk = 34
-        versionCode = 6
-        versionName = "1.5"
+        versionCode = 7
+        versionName = "1.6"
     }
 
     // CI 会把 ANDROID_KEYSTORE_BASE64 解码到临时文件，并通过 ANDROID_KEYSTORE_FILE 传入路径；
