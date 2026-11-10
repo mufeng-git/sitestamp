@@ -369,6 +369,26 @@ object WatermarkRenderer {
         )
     }
 
+    /** 通用 logo 徽标（白卡/深色卡/时间条/角标用）：等比绘制，没素材就画蓝块占位。 */
+    private fun drawLogoBadge(canvas: Canvas, left: Float, top: Float, size: Float, logo: Bitmap?) {
+        if (logo != null) {
+            val scale = minOf(size / logo.width, size / logo.height)
+            val dw = logo.width * scale
+            val dh = logo.height * scale
+            val dl = left + (size - dw) / 2f
+            val dt = top + (size - dh) / 2f
+            canvas.drawBitmap(
+                logo, null, RectF(dl, dt, dl + dw, dt + dh),
+                Paint(Paint.FILTER_BITMAP_FLAG)
+            )
+        } else {
+            canvas.drawRect(
+                RectF(left, top, left + size, top + size),
+                Paint(Paint.ANTI_ALIAS_FLAG).apply { color = BLOCK_LOGO_BLUE }
+            )
+        }
+    }
+
     // ------------------------------------------------------------------ 白卡 / 时间条 / 角标
 
     /** 天气 + 坐标 + 地址合成一行次要信息。 */
