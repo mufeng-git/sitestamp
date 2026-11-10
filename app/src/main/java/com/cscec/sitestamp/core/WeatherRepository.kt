@@ -89,30 +89,33 @@ class WeatherRepository(private val context: Context) {
     }
 
     /** WMO weather code 转现场口语。 */
-    private fun describe(code: Int): String = when (code) {
-        0 -> "晴"
-        1 -> "晴间多云"
-        2 -> "多云"
-        3 -> "阴"
-        45, 48 -> "雾"
-        51, 53, 55, 56, 57 -> "毛毛雨"
-        61 -> "小雨"
-        63 -> "中雨"
-        65 -> "大雨"
-        66, 67 -> "冻雨"
-        71 -> "小雪"
-        73 -> "中雪"
-        75 -> "大雪"
-        77 -> "米雪"
-        80, 81 -> "阵雨"
-        82 -> "强阵雨"
-        85, 86 -> "阵雪"
-        95 -> "雷阵雨"
-        96, 99 -> "雷暴冰雹"
-        else -> "天气"
-    }
+    private fun describe(code: Int): String = describeWeatherCode(code)
 
     private companion object {
         const val CACHE_MS = 10 * 60 * 1000L
     }
+}
+
+/** WMO weather code 转现场口语。 */
+internal fun describeWeatherCode(code: Int): String = when (code) {
+    0 -> "晴"
+    1 -> "晴间多云"
+    2 -> "多云"
+    3 -> "阴"
+    45, 48 -> "雾"
+    51, 53, 55, 56, 57 -> "毛毛雨"
+    61 -> "小雨"
+    63 -> "中雨"
+    65 -> "大雨"
+    66, 67 -> "冻雨"
+    71 -> "小雪"
+    73 -> "中雪"
+    75 -> "大雪"
+    77 -> "米雪"
+    80, 81 -> "阵雨"
+    82 -> "强阵雨"
+    85, 86 -> "阵雪"
+    95 -> "雷阵雨"
+    96, 99 -> "雷暴冰雹"
+    else -> "天气"
 }

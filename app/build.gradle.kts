@@ -45,6 +45,14 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
+
+    testOptions {
+        unitTests {
+            // 纯逻辑单测直接跑在 JVM 上。WatermarkRenderer 是 object，初始化时会调用
+            // android.graphics.Color 等 framework 方法，未 mock 时需要返回默认值。
+            isReturnDefaultValues = true
+        }
+    }
 }
 
 dependencies {
@@ -69,4 +77,6 @@ dependencies {
     ksp("androidx.room:room-compiler:2.6.1")
 
     implementation("androidx.exifinterface:exifinterface:1.3.7")
+
+    testImplementation("junit:junit:4.13.2")
 }
