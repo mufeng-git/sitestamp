@@ -134,7 +134,12 @@ class MainActivity : ComponentActivity() {
                     onDeleteTemplate = { vm.deleteTemplate(it.id) },
                     onOpenGallery = { vm.refreshRecentPhotos() },
                     onDismissBanner = { vm.dismissBanner() },
-                    onRequestPermission = { requestPermissionsIfNeeded() }
+                    onRequestPermission = { requestPermissionsIfNeeded() },
+                    watermarkStyle = cameraState.style,
+                    onStyleChange = { vm.updateStyle(it) },
+                    onLogoPicked = { vm.importLogo(it) },
+                    onClearLogo = { vm.clearLogo() },
+                    onFieldsChange = { vm.replaceFields(it) }
                 )
             }
         }

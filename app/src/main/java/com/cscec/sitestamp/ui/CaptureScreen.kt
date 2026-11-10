@@ -92,6 +92,7 @@ import com.cscec.sitestamp.data.PhotoRecord
 import com.cscec.sitestamp.data.Project
 import com.cscec.sitestamp.data.Template
 import com.cscec.sitestamp.data.TemplateField
+import com.cscec.sitestamp.data.WatermarkStyle
 import com.cscec.sitestamp.ui.theme.BrandColors
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -128,7 +129,12 @@ fun CaptureScreen(
     onDeleteTemplate: (Template) -> Unit,
     onOpenGallery: () -> Unit,
     onDismissBanner: () -> Unit,
-    onRequestPermission: () -> Unit
+    onRequestPermission: () -> Unit,
+    watermarkStyle: WatermarkStyle,
+    onStyleChange: (WatermarkStyle) -> Unit,
+    onLogoPicked: (Uri) -> Unit,
+    onClearLogo: () -> Unit,
+    onFieldsChange: (List<Pair<String, String>>) -> Unit
 ) {
     val haptics = LocalHapticFeedback.current
 
@@ -138,6 +144,7 @@ fun CaptureScreen(
     var showCreateProject by remember { mutableStateOf(false) }
     var showCreateTemplate by remember { mutableStateOf(false) }
     var pickingField by remember { mutableStateOf<TemplateField?>(null) }
+    var showWatermarkSettings by remember { mutableStateOf(false) }
 
     // 快门白闪：每次拍摄递增序号触发一次
     var flashTick by remember { mutableIntStateOf(0) }
@@ -180,6 +187,7 @@ fun CaptureScreen(
                     onToggleFlash()
                 },
                 onSwitchLens = onSwitchLens,
+                onWatermarkSettings = { showWatermarkSettings = true },
                 modifier = Modifier.align(Alignment.TopStart)
             )
 
@@ -399,6 +407,18 @@ fun CaptureScreen(
         GallerySheet(records = recentPhotos, onDismiss = { showGallery = false })
     }
 
+    if (showWatermarkSettings) {
+        WatermarkSettingsSheet(
+            style = watermarkStyle,
+            fields = state.currentFields,
+            onStyleChange = onStyleChange,
+            onLogoPicked = onLogoPicked,
+            onClearLogo = onClearLogo,
+            onFieldsChange = onFieldsChange,
+            onDismiss = { showWatermarkSettings = false }
+        )
+    }
+
     if (showCreateProject) {
         CreateProjectDialog(
             onCreate = { name, company ->
@@ -430,6 +450,7 @@ private fun TopBar(
     onProjectClick: () -> Unit,
     onToggleFlash: () -> Unit,
     onSwitchLens: () -> Unit,
+    onWatermarkSettings: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Row(
@@ -487,6 +508,15 @@ private fun TopBar(
 
         Spacer(Modifier.weight(1f))
 
+        RoundIconButton(onClick = onWatermarkSettings) {
+            Icon(
+                Icons.Default.Tune,
+                contentDescription = "水印设置",
+                tint = Color.White,
+                modifier = Modifier.size(19.dp)
+            )
+        }
+        Spacer(Modifier.width(8.dp))
         RoundIconButton(onClick = onToggleFlash) {
             Icon(
                 if (flashOn) Icons.Default.FlashOn else Icons.Default.FlashOff,
@@ -531,6 +561,17 @@ private fun WatermarkPreviewCard(state: CameraState, modifier: Modifier = Modifi
     val address = state.addressText.replace("地址：", "").trim()
     val builder = state.currentProject?.company?.takeIf { it.isNotBlank() }
         ?: "中建国际建设有限公司"
+    val primary = Color(0xFF000000.toInt() or state.style.primaryColor)
+    val bgTone = Color(0xFF000000.toInt() or state.style.bgColor)
+        .copy(alpha = state.style.bgAlpha / 255f)
+    val inkTone = if (state.style.textColor != 0) {
+        Color(0xFF000000.toInt() or state.style.textColor)
+    } else {
+        val lum = (0.299 * ((state.style.bgColor shr 16) and 0xFF) +
+            0.587 * ((state.style.bgColor shr 8) and 0xFF) +
+            0.114 * (state.style.bgColor and 0xFF)) / 255.0
+        if (lum > 0.62) Color(0xFF181A1E) else Color.White
+    }
 
     Column(
         modifier = modifier
@@ -565,7 +606,7 @@ private fun WatermarkPreviewCard(state: CameraState, modifier: Modifier = Modifi
                 Modifier
                     .fillMaxHeight()
                     .weight(1f)
-                    .background(Color(0xFF2E6DB5)),
+                    .background(primary),
                 contentAlignment = Alignment.CenterStart
             ) {
                 Text(
@@ -583,10 +624,10 @@ private fun WatermarkPreviewCard(state: CameraState, modifier: Modifier = Modifi
         Column(
             Modifier
                 .fillMaxWidth()
-                .background(Color(0xFFC0C0C0))
+                .background(bgTone)
                 .padding(horizontal = 9.dp, vertical = 5.dp)
         ) {
-            val ink = Color(0xFF202020)
+            val ink = inkTone
             filled.forEach { (label, value) ->
                 PreviewRow(label, value, ink)
             }
@@ -601,7 +642,7 @@ private fun WatermarkPreviewCard(state: CameraState, modifier: Modifier = Modifi
             Modifier
                 .fillMaxWidth()
                 .height(28.dp)
-                .background(Color(0xFF2E6DB5)),
+                .background(primary),
             contentAlignment = Alignment.CenterStart
         ) {
             Text(

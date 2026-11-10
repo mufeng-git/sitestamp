@@ -17,6 +17,7 @@ import com.cscec.sitestamp.data.Template
 import com.cscec.sitestamp.data.TemplateDao
 import com.cscec.sitestamp.data.TemplateField
 import com.cscec.sitestamp.data.TemplateFieldDao
+import com.cscec.sitestamp.data.WatermarkStyle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -47,6 +48,7 @@ data class CameraState(
     val addressText: String = "地址：正在解析",
     val captureTime: String = "",
     val weatherText: String = "",
+    val style: WatermarkStyle = WatermarkStyle(),
     val recentValues: Map<String, List<String>> = emptyMap(),
     val feedback: CaptureFeedback = CaptureFeedback()
 )
@@ -69,16 +71,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private val weatherRepo = WeatherRepository(app)
 
-    /** 中建 logo（assets/cscec_logo.png）；缺素材时渲染器自动退化为占位画法。 */
-    private val logoBitmap: android.graphics.Bitmap? by lazy {
-        try {
-            app.assets.open("cscec_logo.png").use {
-                android.graphics.BitmapFactory.decodeStream(it)
-            }
-        } catch (_: Exception) {
-            null
-        }
-    }
 
     val location = locationRepo.location
 
@@ -135,6 +127,111 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /** 该字段最近用过的值，排在选项最前面。 */
     fun recentFor(fieldKey: String): List<String> =
         _cameraState.value.recentValues[fieldKey].orEmpty()
+
+    // ------------------------------------------------------------ 水印样式与字段自定义
+
+    private var cachedLogoPath: String = "\u0000"
+    private var cachedLogo: android.graphics.Bitmap? = null
+
+    private fun assetLogo(): android.graphics.Bitmap? = try {
+        getApplication<Application>().assets.open("cscec_logo.png").use {
+            android.graphics.BitmapFactory.decodeStream(it)
+        }
+    } catch (_: Exception) {
+        null
+    }
+
+    /** 用户自定义 logo 优先，未设置或读不出来时回落到内置素材，再回落到占位画法。 */
+    private fun currentLogo(): android.graphics.Bitmap? {
+        val path = _cameraState.value.style.logoPath
+        if (path == cachedLogoPath) return cachedLogo
+        cachedLogoPath = path
+        cachedLogo = if (path.isBlank()) {
+            assetLogo()
+        } else {
+            try {
+                android.graphics.BitmapFactory.decodeFile(path) ?: assetLogo()
+            } catch (_: Exception) {
+                assetLogo()
+            }
+        }
+        return cachedLogo
+    }
+
+    /** 改样式：立即生效并写回当前模板，下次切回来还是这套。 */
+    fun updateStyle(style: WatermarkStyle) {
+        val tpl = _cameraState.value.currentTemplate
+        _cameraState.value = _cameraState.value.copy(
+            style = style,
+            currentTemplate = tpl?.copy(styleConfig = style.toJson())
+        )
+        if (tpl != null) {
+            viewModelScope.launch(Dispatchers.IO) {
+                templateDao.updateStyleConfig(tpl.id, style.toJson())
+            }
+        }
+    }
+
+    /** 从相册导入 logo：复制进应用私有目录，避免原图被删后水印失效。 */
+    fun importLogo(uri: android.net.Uri) {
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val dir = File(app.filesDir, "logos").apply { mkdirs() }
+                dir.listFiles()?.forEach { it.delete() }
+                val dest = File(dir, "logo_" + System.currentTimeMillis() + ".png")
+                app.contentResolver.openInputStream(uri)?.use { input ->
+                    dest.outputStream().use { out -> input.copyTo(out) }
+                }
+                cachedLogoPath = "\u0000"
+                withContext(Dispatchers.Main) {
+                    updateStyle(_cameraState.value.style.copy(logoPath = dest.absolutePath))
+                }
+            } catch (t: Throwable) {
+                android.util.Log.e("SiteStamp", "importLogo failed", t)
+                withContext(Dispatchers.Main) { showBanner("logo 导入失败", false) }
+            }
+        }
+    }
+
+    fun clearLogo() {
+        cachedLogoPath = "\u0000"
+        updateStyle(_cameraState.value.style.copy(logoPath = ""))
+    }
+
+    /**
+     * 重建模板字段（增删改排序都走这里）。
+     * 标签没改的字段保留原来的填写值，改名的按新字段重填。
+     */
+    fun replaceFields(drafts: List<Pair<String, String>>) {
+        val tpl = _cameraState.value.currentTemplate ?: return
+        val oldByLabel = _cameraState.value.currentFields.associate {
+            it.label.trim() to _cameraState.value.fieldValues[it.fieldKey].orEmpty()
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            fieldDao.deleteByTemplate(tpl.id)
+            val list = drafts
+                .filter { it.first.isNotBlank() }
+                .mapIndexed { index, (label, options) ->
+                    TemplateField(
+                        templateId = tpl.id,
+                        fieldKey = "f" + index,
+                        label = label.trim(),
+                        options = options.trim().takeIf { it.isNotEmpty() },
+                        sortOrder = index
+                    )
+                }
+            if (list.isNotEmpty()) fieldDao.insertAll(list)
+            val carried = HashMap<String, String>()
+            list.forEach { f ->
+                val old = oldByLabel[f.label]
+                if (!old.isNullOrBlank()) carried[f.fieldKey] = old
+            }
+            withContext(Dispatchers.Main) {
+                _cameraState.value = _cameraState.value.copy(fieldValues = carried)
+            }
+        }
+    }
 
     // ------------------------------------------------------------ 拍摄反馈
 
@@ -237,6 +334,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 _cameraState.value = _cameraState.value.copy(
                     currentTemplate = template,
                     currentFields = fields,
+                    style = WatermarkStyle.fromJson(template.styleConfig),
                     // 同一模板内的编辑不要被 Flow 重发覆盖
                     fieldValues = if (sameTemplate) _cameraState.value.fieldValues
                     else fields.associate { it.fieldKey to (it.defaultValue ?: "") }.toMutableMap()
@@ -289,9 +387,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             addressText = locationRepo.formatAddress(snapshot),
             latitude = snapshot.latitude,
             longitude = snapshot.longitude,
-            weatherText = state.weatherText,
-            style = WatermarkRenderer.STYLE_BLOCK,
-            logo = logoBitmap
+            weatherText = if (state.style.showWeather) state.weatherText else "",
+            style = state.style.styleId,
+            logo = currentLogo(),
+            bgArgb = state.style.bgArgb(),
+            primaryColor = state.style.primaryColor,
+            textColor = state.style.textColor.takeIf { it != 0 },
+            showCoords = state.style.showCoords,
+            showGps = state.style.showCoords,
+            showTime = state.style.showTime,
+            showAddress = state.style.showAddress
         )
         try {
             val result = photoRepo.saveWatermarked(originalFile, data)
@@ -352,9 +457,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             addressText = locationRepo.formatAddress(snapshot),
             latitude = snapshot.latitude,
             longitude = snapshot.longitude,
-            weatherText = state.weatherText,
-            style = WatermarkRenderer.STYLE_BLOCK,
-            logo = logoBitmap
+            weatherText = if (state.style.showWeather) state.weatherText else "",
+            style = state.style.styleId,
+            logo = currentLogo(),
+            bgArgb = state.style.bgArgb(),
+            primaryColor = state.style.primaryColor,
+            textColor = state.style.textColor.takeIf { it != 0 },
+            showCoords = state.style.showCoords,
+            showGps = state.style.showCoords,
+            showTime = state.style.showTime,
+            showAddress = state.style.showAddress
         )
         return try {
             photoRepo.saveWatermarked(originalFile, data)

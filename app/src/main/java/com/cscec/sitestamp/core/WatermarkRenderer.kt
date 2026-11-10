@@ -44,17 +44,35 @@ object WatermarkRenderer {
         val showTime: Boolean = true,
         val brandColor: Int = DEFAULT_BRAND,
         val weatherText: String = "",
+        /** 1 三段式 2 深色卡片 3 白卡极简 4 大时间条 5 紧凑角标 */
         val style: Int = STYLE_BLOCK,
-        val logo: Bitmap? = null
+        val logo: Bitmap? = null,
+        /** 字段区底色（已含用户设定的透明度）。 */
+        val bgArgb: Int = Color.argb(186, 8, 11, 15),
+        /** 标题条 / 落款 / 强调块颜色。 */
+        val primaryColor: Int = Color.rgb(46, 109, 181),
+        /** 正文颜色；null = 按底色亮度自动取黑或白。 */
+        val textColor: Int? = null,
+        /** 是否在水印里显示经纬度。 */
+        val showCoords: Boolean = false
     )
 
     private const val DEFAULT_BRAND = 0xFF2F7BF6.toInt()
 
-    /** 深色卡片样式（简洁，无 logo，适合快速留痕）。 */
-    const val STYLE_CARD = 0
+    /** 三段式（蓝标题条 / 字段区 / 蓝落款 + logo 竖栏），默认样式。 */
+        const val STYLE_BLOCK = 1
 
-    /** 中建三段式（蓝头/灰身/蓝脚 + logo 竖栏），默认样式。 */
-    const val STYLE_BLOCK = 1
+        /** 深色圆角卡片（半透明，遮挡最小）。 */
+        const val STYLE_CARD = 2
+
+        /** 白卡极简（浅底深字，适合汇报材料）。 */
+        const val STYLE_WHITE = 3
+
+        /** 通栏大时间条（远看醒目）。 */
+        const val STYLE_TIMEBAR = 4
+
+        /** 紧凑角标（信息最少）。 */
+        const val STYLE_COMPACT = 5
 
     private const val KIND_TITLE = 0
     private const val KIND_SUB = 1
@@ -90,10 +108,12 @@ object WatermarkRenderer {
         if (bitmap !== decoded) decoded.recycle()
 
         val canvas = Canvas(bitmap)
-        if (data.style == STYLE_BLOCK) {
-            drawBlock(canvas, bitmap.width, bitmap.height, data)
-        } else {
-            drawCard(canvas, bitmap.width, bitmap.height, data)
+        when (data.style) {
+            STYLE_CARD -> drawCard(canvas, bitmap.width, bitmap.height, data)
+            STYLE_WHITE -> drawWhite(canvas, bitmap.width, bitmap.height, data)
+            STYLE_TIMEBAR -> drawTimeBar(canvas, bitmap.width, bitmap.height, data)
+            STYLE_COMPACT -> drawCompact(canvas, bitmap.width, bitmap.height, data)
+            else -> drawBlock(canvas, bitmap.width, bitmap.height, data)
         }
 
         FileOutputStream(outputFile).use { fos ->
@@ -112,6 +132,23 @@ object WatermarkRenderer {
     private val BLOCK_INK = Color.rgb(32, 32, 32)
     private val BLOCK_LOGO_BLUE = Color.rgb(0, 125, 180)
     private val BLOCK_LOGO_BG = Color.rgb(250, 250, 250)
+
+    /** 底亮用深字、底暗用白字，避免用户把底色调成浅色后字看不见。 */
+    private fun inkOn(bgArgb: Int, override: Int?): Int {
+        if (override != null) return override
+        val r = (bgArgb shr 16) and 0xFF
+        val g = (bgArgb shr 8) and 0xFF
+        val b = bgArgb and 0xFF
+        val lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255.0
+        return if (lum > 0.62) Color.rgb(24, 26, 30) else Color.WHITE
+    }
+
+    private fun secondaryOn(text: Int): Int = Color.argb(
+        170,
+        (text shr 16) and 0xFF,
+        (text shr 8) and 0xFF,
+        text and 0xFF
+    )
 
     /** 两字标签用全角空格撑成四字宽，冒号位置才对得齐。 */
     private fun spreadLabel(label: String): String {
@@ -152,6 +189,10 @@ object WatermarkRenderer {
             if (t.isNotEmpty()) rows.add("拍摄时间" to t)
         }
         if (data.weatherText.isNotBlank()) rows.add("天\u3000气" to data.weatherText.trim())
+        if (data.showCoords) {
+            val coords = cleanGps(data.gpsText)
+            if (coords.isNotEmpty()) rows.add("坐\u3000标" to coords)
+        }
         val addr = if (data.showAddress) cleanAddress(data.addressText) else ""
         if (addr.isNotEmpty()) rows.add("地\u3000点" to addr)
         if (rows.isEmpty()) return
@@ -181,19 +222,19 @@ object WatermarkRenderer {
         val bodyTop = cardTop + headerH
         val footTop = bodyTop + bodyH
 
-        // ---- 四个色块
-        canvas.drawRect(RectF(marginX, cardTop, marginX + logoW, cardTop + headerH), Paint().apply {
-            color = BLOCK_LOGO_BG
-        })
-        canvas.drawRect(RectF(marginX + logoW, cardTop, cardRight, bodyTop), Paint().apply {
-            color = BLOCK_BLUE
-        })
-        canvas.drawRect(RectF(marginX, bodyTop, cardRight, footTop), Paint().apply {
-            color = BLOCK_GRAY
-        })
-        canvas.drawRect(RectF(marginX, footTop, cardRight, cardBottom), Paint().apply {
-            color = BLOCK_BLUE
-        })
+        // ---- 四个色块（底色/主色都来自用户的样式配置）
+        val headPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = data.primaryColor }
+        val bodyPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = data.bgArgb }
+        canvas.drawRect(
+            RectF(marginX, cardTop, marginX + logoW, cardTop + headerH),
+            Paint(Paint.ANTI_ALIAS_FLAG).apply { color = BLOCK_LOGO_BG }
+        )
+        canvas.drawRect(RectF(marginX + logoW, cardTop, cardRight, bodyTop), headPaint)
+        canvas.drawRect(RectF(marginX, bodyTop, cardRight, footTop), bodyPaint)
+        canvas.drawRect(RectF(marginX, footTop, cardRight, cardBottom), headPaint)
+
+        val ink = inkOn(data.bgArgb, data.textColor)
+        val headInk = inkOn(data.primaryColor, null)
 
         drawLogo(canvas, marginX, cardTop, logoW, headerH, data.logo)
 
@@ -201,7 +242,7 @@ object WatermarkRenderer {
         val text = Paint(Paint.ANTI_ALIAS_FLAG)
         text.textSize = titleS
         text.typeface = boldFace
-        text.color = Color.WHITE
+        text.color = headInk
         canvas.drawText(data.projectName.trim(), contentX, cardTop + headerH / 2f + titleS * 0.36f, text)
 
         // ---- 字段区
@@ -210,7 +251,7 @@ object WatermarkRenderer {
             val lines = pair.second
             text.textSize = bodyS
             text.typeface = boldFace
-            text.color = BLOCK_INK
+            text.color = ink
             canvas.drawText(label, contentX, y + rowH * 0.52f + bodyS * 0.36f, text)
 
             text.typeface = normalFace
@@ -227,7 +268,7 @@ object WatermarkRenderer {
         val footText = if (builder.isEmpty()) "施工单位：中建国际建设有限公司" else "施工单位：$builder"
         text.textSize = footS
         text.typeface = normalFace
-        text.color = Color.WHITE
+        text.color = headInk
         canvas.drawText(footText, contentX, footTop + footH / 2f + footS * 0.36f, text)
     }
 
@@ -272,6 +313,233 @@ object WatermarkRenderer {
         val cx = x + lw / 2f
         canvas.drawText("中国", cx, by + box * 0.92f + fs * 1.35f, namePaint)
         canvas.drawText("建筑", cx, by + box * 0.92f + fs * 2.45f, namePaint)
+    }
+
+    // ------------------------------------------------------------------ 白卡 / 时间条 / 角标
+
+    /** 天气 + 坐标 + 地址合成一行次要信息。 */
+    private fun buildMeta(data: WatermarkData): String {
+        val parts = ArrayList<String>()
+        if (data.weatherText.isNotBlank()) parts.add(data.weatherText.trim())
+        if (data.showCoords) {
+            val c = cleanGps(data.gpsText)
+            if (c.isNotEmpty()) parts.add(c)
+        }
+        if (data.showAddress) {
+            val a = cleanAddress(data.addressText)
+            if (a.isNotEmpty()) parts.add(a)
+        }
+        return parts.joinToString("   ")
+    }
+
+    /** C 白卡极简：浅底圆角卡 + 顶部主色细条 + 主色大字时间。 */
+    private fun drawWhite(canvas: Canvas, w: Int, h: Int, data: WatermarkData) {
+        val unit = h * 0.0195f
+        val pad = h * 0.026f
+        val cardW = w * 0.62f
+        val mx = w * 0.030f
+        val mb = h * 0.032f
+        val radius = w * 0.016f
+        val titleS = unit * 1.30f
+        val labelS = unit * 0.80f
+        val valueS = unit * 0.94f
+        val timeS = unit * 1.20f
+        val accentH = unit * 0.55f
+
+        val ink = inkOn(data.bgArgb, data.textColor)
+        val sub = secondaryOn(ink)
+        val boldFace = Typeface.create("sans-serif-medium", Typeface.BOLD)
+        val normalFace = Typeface.create("sans-serif", Typeface.NORMAL)
+        val measure = Paint(Paint.ANTI_ALIAS_FLAG)
+
+        val rows = ArrayList<Pair<String, String>>()
+        data.fields.filter { it.second.isNotBlank() }
+            .forEach { rows.add(spreadLabel(it.first) to it.second.trim()) }
+
+        var labelW = 0f
+        measure.textSize = labelS
+        measure.typeface = normalFace
+        for ((label, _) in rows) labelW = max(labelW, measure.measureText(label))
+        if (labelW > 0f) labelW += unit * 1.0f
+        val valueMaxW = max(cardW - pad * 2f - labelW, cardW * 0.30f)
+
+        val laid = ArrayList<Pair<String, List<String>>>()
+        var contentH = 0f
+        for ((label, value) in rows) {
+            measure.textSize = valueS
+            val lines = wrap(value, valueMaxW, measure)
+            laid.add(label to lines)
+            contentH += valueS * 1.55f * lines.size
+        }
+
+        val meta = buildMeta(data)
+        var cardH = accentH + pad * 2f + titleS * 1.5f + timeS * 1.6f + contentH
+        if (meta.isNotEmpty()) cardH += labelS * 1.6f
+
+        val top = h - mb - cardH
+        val right = mx + cardW
+        canvas.save()
+        val clip = Path().apply {
+            addRoundRect(RectF(mx, top, right, top + cardH), radius, radius, Path.Direction.CW)
+        }
+        canvas.clipPath(clip)
+        canvas.drawRect(RectF(mx, top, right, top + cardH), Paint().apply { color = data.bgArgb })
+        canvas.drawRect(RectF(mx, top, right, top + accentH), Paint().apply { color = data.primaryColor })
+        canvas.restore()
+
+        val text = Paint(Paint.ANTI_ALIAS_FLAG)
+        var y = top + accentH + pad
+        text.textSize = titleS
+        text.typeface = boldFace
+        text.color = ink
+        canvas.drawText(data.projectName.trim(), mx + pad, y + titleS, text)
+        y += titleS * 1.5f
+
+        text.textSize = timeS
+        text.color = data.primaryColor
+        canvas.drawText(cleanTime(data.captureTime), mx + pad, y + timeS, text)
+        y += timeS * 1.6f
+
+        for ((label, lines) in laid) {
+            text.textSize = labelS
+            text.typeface = normalFace
+            text.color = sub
+            canvas.drawText(label, mx + pad, y + valueS * 0.78f, text)
+            text.textSize = valueS
+            text.typeface = boldFace
+            text.color = ink
+            var vy = y + valueS * 0.78f
+            for (line in lines) {
+                canvas.drawText(line, mx + pad + labelW, vy, text)
+                vy += valueS * 1.55f
+            }
+            y += valueS * 1.55f * lines.size
+        }
+        if (meta.isNotEmpty()) {
+            text.textSize = labelS
+            text.typeface = normalFace
+            text.color = sub
+            canvas.drawText(meta, mx + pad, y + labelS, text)
+        }
+    }
+
+    /** D 通栏大时间条：整条通栏，时间超大，右侧显示首个字段值（区域号）。 */
+    private fun drawTimeBar(canvas: Canvas, w: Int, h: Int, data: WatermarkData) {
+        val barH = h * 0.150f
+        val top = h - h * 0.032f - barH
+        canvas.drawRect(
+            RectF(0f, top, w.toFloat(), top + barH),
+            Paint().apply { color = data.bgArgb }
+        )
+        canvas.drawRect(
+            RectF(0f, top, w * 0.012f, top + barH),
+            Paint().apply { color = data.primaryColor }
+        )
+
+        val ink = inkOn(data.bgArgb, data.textColor)
+        val sub = secondaryOn(ink)
+        val timeS = h * 0.043f
+        val subS = h * 0.017f
+        val padX = w * 0.045f
+        val boldFace = Typeface.create("sans-serif-medium", Typeface.BOLD)
+        val normalFace = Typeface.create("sans-serif", Typeface.NORMAL)
+
+        val text = Paint(Paint.ANTI_ALIAS_FLAG)
+        text.textSize = timeS
+        text.typeface = boldFace
+        text.color = ink
+        canvas.drawText(
+            cleanTime(data.captureTime), padX,
+            top + barH * 0.42f + timeS * 0.36f, text
+        )
+
+        val parts = ArrayList<String>()
+        if (data.projectName.isNotBlank()) parts.add(data.projectName.trim())
+        if (data.weatherText.isNotBlank()) parts.add(data.weatherText.trim())
+        if (data.showAddress) {
+            val a = cleanAddress(data.addressText)
+            if (a.isNotEmpty()) parts.add(a)
+        }
+        text.textSize = subS
+        text.typeface = normalFace
+        text.color = sub
+        canvas.drawText(
+            parts.joinToString(" · "), padX,
+            top + barH * 0.80f + subS * 0.36f, text
+        )
+
+        val badge = data.fields.firstOrNull { it.second.isNotBlank() }?.second?.trim()
+        if (!badge.isNullOrEmpty()) {
+            text.textAlign = Paint.Align.RIGHT
+            text.textSize = h * 0.030f
+            text.typeface = boldFace
+            text.color = ink
+            canvas.drawText(
+                badge, w - w * 0.03f,
+                top + barH * 0.42f + h * 0.030f * 0.36f, text
+            )
+            text.textAlign = Paint.Align.LEFT
+        }
+    }
+
+    /** E 紧凑角标：三行小卡，几乎不挡画面。 */
+    private fun drawCompact(canvas: Canvas, w: Int, h: Int, data: WatermarkData) {
+        val unit = h * 0.0195f
+        val pad = h * 0.020f
+        val s1 = unit * 1.05f
+        val s2 = unit * 0.82f
+        val ink = inkOn(data.bgArgb, data.textColor)
+        val sub = secondaryOn(ink)
+        val boldFace = Typeface.create("sans-serif-medium", Typeface.BOLD)
+        val normalFace = Typeface.create("sans-serif", Typeface.NORMAL)
+        val measure = Paint(Paint.ANTI_ALIAS_FLAG)
+
+        val line1 = buildString {
+            append(cleanTime(data.captureTime))
+            if (data.weatherText.isNotBlank()) append("   ").append(data.weatherText.trim())
+        }
+        val fieldPart = data.fields.filter { it.second.isNotBlank() }
+            .joinToString(" · ") { it.second.trim() }
+        val line2 = listOf(data.projectName.trim(), fieldPart)
+            .filter { it.isNotEmpty() }.joinToString(" · ")
+        val line3 = data.company.trim()
+
+        measure.textSize = s1
+        val w1 = measure.measureText(line1)
+        measure.textSize = s2
+        val w2 = max(measure.measureText(line2), measure.measureText(line3))
+        val boxW = minOf(max(w1, w2) + pad * 2f, w - w * 0.056f)
+        val boxH = pad * 2f + s1 * 1.6f + s2 * 1.5f * 2f
+        val mx = w * 0.028f
+        val mb = h * 0.030f
+        val top = h - mb - boxH
+        val radius = w * 0.012f
+
+        canvas.save()
+        val clip = Path().apply {
+            addRoundRect(RectF(mx, top, mx + boxW, top + boxH), radius, radius, Path.Direction.CW)
+        }
+        canvas.clipPath(clip)
+        canvas.drawRect(RectF(mx, top, mx + boxW, top + boxH), Paint().apply { color = data.bgArgb })
+        canvas.drawRect(
+            RectF(mx, top + boxH * 0.12f, mx + w * 0.006f, top + boxH * 0.88f),
+            Paint().apply { color = data.primaryColor }
+        )
+        canvas.restore()
+
+        val text = Paint(Paint.ANTI_ALIAS_FLAG)
+        var y = top + pad
+        text.textSize = s1
+        text.typeface = boldFace
+        text.color = ink
+        canvas.drawText(line1, mx + pad, y + s1, text)
+        y += s1 * 1.6f
+        text.textSize = s2
+        text.typeface = normalFace
+        text.color = sub
+        if (line2.isNotEmpty()) canvas.drawText(line2, mx + pad, y + s2, text)
+        y += s2 * 1.5f
+        if (line3.isNotEmpty()) canvas.drawText(line3, mx + pad, y + s2, text)
     }
 
     // ------------------------------------------------------------------ 卡片绘制
@@ -404,14 +672,16 @@ object WatermarkRenderer {
         }
         canvas.clipPath(clip)
 
+        val ink = inkOn(data.bgArgb, data.textColor)
+        val faint = secondaryOn(ink)
         val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.argb(186, 8, 11, 15) // 73% 深色：现场强光下白字依旧可读
+            color = data.bgArgb
             style = Paint.Style.FILL
         }
         canvas.drawRect(cardRect, bgPaint)
 
         val barPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = data.brandColor
+            color = data.primaryColor
             style = Paint.Style.FILL
         }
         canvas.drawRect(RectF(marginX, cardTop, marginX + barW, cardBottom), barPaint)
@@ -436,12 +706,12 @@ object WatermarkRenderer {
                     if (row.label.isNotEmpty()) {
                         textPaint.textSize = labelSize
                         textPaint.typeface = mediumFace
-                        textPaint.color = SECONDARY
+                        textPaint.color = faint
                         canvas.drawText(row.label, contentX, y + row.size, textPaint)
                     }
                     textPaint.textSize = row.size
                     textPaint.typeface = mediumFace
-                    textPaint.color = Color.WHITE
+                    textPaint.color = ink
                     var vy = y + row.size
                     for (line in lines) {
                         canvas.drawText(line, contentX + labelColW, vy, textPaint)
@@ -453,7 +723,7 @@ object WatermarkRenderer {
                     val isBold = row.kind == KIND_TITLE || row.kind == KIND_TIME
                     textPaint.textSize = row.size
                     textPaint.typeface = if (isBold) boldFace else normalFace
-                    textPaint.color = row.color
+                    textPaint.color = if (row.color == Color.WHITE) ink else faint
                     var ty = y + row.size
                     for (line in lines) {
                         canvas.drawText(line, contentX, ty, textPaint)
