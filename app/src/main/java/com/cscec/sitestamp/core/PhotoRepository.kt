@@ -44,21 +44,27 @@ class PhotoRepository(private val context: Context) {
             false
         }
 
-        val outputFile = if (success) watermarkedFile else originalFile
-
-        // 只把带水印的成品存进相册：现场不留无水印原图，避免"未盖章"照片外流。
-        val savedUri = saveToGallery(
-            outputFile,
-            if (success) watermarkDisplayName(originalFile.name) else originalFile.name
-        )
-
-        // 渲染成功后删掉私有目录里的原图，省空间也杜绝无水印件残留
-        if (success) {
+        // 渲染失败时不把无水印原图放进相册（现场不允许出现未盖章照片），
+        // 抛给上层提示重拍；私有目录原图一并清掉。
+        if (!success) {
             try {
                 originalFile.delete()
             } catch (_: Exception) {
-                // 删不掉不影响已保存的成品
+                // 忽略
             }
+            throw IllegalStateException("水印渲染失败，请重拍")
+        }
+
+        val outputFile = watermarkedFile
+
+        // 只把带水印的成品存进相册
+        val savedUri = saveToGallery(outputFile, watermarkDisplayName(originalFile.name))
+
+        // 删掉私有目录里的原图，省空间也杜绝无水印件残留
+        try {
+            originalFile.delete()
+        } catch (_: Exception) {
+            // 删不掉不影响已保存的成品
         }
 
         return SaveResult(
