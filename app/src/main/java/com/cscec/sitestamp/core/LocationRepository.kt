@@ -6,7 +6,9 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.location.Location
 import android.location.LocationManager
+import android.os.Build
 import android.os.Bundle
+import android.os.Looper
 import android.util.Log
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CoroutineScope
@@ -77,28 +79,30 @@ class LocationRepository(private val context: Context) {
         }
 
         // 请求持续更新（GPS 优先）
+        val listener = object : android.location.LocationListener {
+            override fun onLocationChanged(loc: Location) {
+                Log.d("SiteStamp", "requestUpdate: location changed: ${loc.latitude}, ${loc.longitude}, acc=${loc.accuracy}")
+                updateSnapshot(loc)
+            }
+            override fun onProviderDisabled(provider: String) {
+                Log.d("SiteStamp", "requestUpdate: provider disabled: $provider")
+            }
+            override fun onProviderEnabled(provider: String) {
+                Log.d("SiteStamp", "requestUpdate: provider enabled: $provider")
+            }
+            override fun onStatusChanged(provider: String?, status: Int, extras: android.os.Bundle?) {
+            }
+        }
         for (provider in providers) {
             try {
-                lm.requestLocationUpdates(
-                    provider,
-                    1000L,
-                    0f,
-                    ContextCompat.getMainExecutor(context),
-                    object : android.location.LocationListener {
-                        override fun onLocationChanged(loc: Location) {
-                            Log.d("SiteStamp", "requestUpdate: location changed: ${loc.latitude}, ${loc.longitude}, acc=${loc.accuracy}")
-                            updateSnapshot(loc)
-                        }
-                        override fun onProviderDisabled(provider: String) {
-                            Log.d("SiteStamp", "requestUpdate: provider disabled: $provider")
-                        }
-                        override fun onProviderEnabled(provider: String) {
-                            Log.d("SiteStamp", "requestUpdate: provider enabled: $provider")
-                        }
-                        override fun onStatusChanged(provider: String?, status: Int, extras: android.os.Bundle?) {
-                        }
-                    }
-                )
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    // API 30+：Executor 重载
+                    lm.requestLocationUpdates(provider, 1000L, 0f, ContextCompat.getMainExecutor(context), listener)
+                } else {
+                    // API 26-29：老重载必须带 Looper
+                    @Suppress("DEPRECATION")
+                    lm.requestLocationUpdates(provider, 1000L, 0f, listener, Looper.getMainLooper())
+                }
             } catch (_: SecurityException) {
                 Log.e("SiteStamp", "requestUpdate: SecurityException for provider $provider")
             }
@@ -158,7 +162,7 @@ class LocationRepository(private val context: Context) {
     fun formatGps(snapshot: LocationSnapshot): String {
         val lat = snapshot.latitude ?: return "定位未获取"
         val lng = snapshot.longitude ?: return "定位未获取"
-        val acc = snapshot.accuracy?.let { " (±${String.format("%.0f", it)}m)" } ?: ""
+        val acc = snapshot.accuracy?.let { " (±${String.format(Locale.US, "%.0f", it)}m)" } ?: ""
         return String.format(Locale.US, "GPS：%.6f, %.6f%s", lat, lng, acc)
     }
 
