@@ -499,15 +499,6 @@ private fun TopBar(
 
         Spacer(Modifier.weight(1f))
 
-        RoundIconButton(onClick = onWatermarkSettings) {
-            Icon(
-                Icons.Default.Palette,
-                contentDescription = "水印样式设置",
-                tint = Color.White,
-                modifier = Modifier.size(19.dp)
-            )
-        }
-        Spacer(Modifier.width(8.dp))
         RoundIconButton(onClick = onToggleFlash) {
             Icon(
                 if (flashOn) Icons.Default.FlashOn else Icons.Default.FlashOff,

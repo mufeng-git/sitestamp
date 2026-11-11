@@ -190,8 +190,9 @@ object WatermarkRenderer {
         val radius = cardW * 0.020f
 
         val titleS = headerH * 0.46f
-        val bodyS = rowH * 0.46f
-        val labelS = rowH * 0.42f
+        // 标签与值同字号同基线，整块才能"一条线"对齐
+        val bodyS = rowH * 0.45f
+        val labelS = bodyS
         val footS = footH * 0.50f
 
         val boldFace = Typeface.create("sans-serif-medium", Typeface.BOLD)
@@ -327,7 +328,7 @@ object WatermarkRenderer {
             RectF(left, top, left + boxW, top + boxH),
             Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE }
         )
-        val inner = minOf(boxW, boxH) * 0.76f
+        val inner = minOf(boxW, boxH) * 0.88f
         val ix = left + (boxW - inner) / 2f
         val iy = top + (boxH - inner) / 2f
 
