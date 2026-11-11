@@ -386,10 +386,6 @@ fun CaptureScreen(
                 showTemplateSheet = false
                 showCreateTemplate = true
             },
-            onOpenWatermarkSettings = {
-                showTemplateSheet = false
-                showWatermarkSettings = true
-            },
             onDismiss = { showTemplateSheet = false }
         )
     }
@@ -935,7 +931,6 @@ private fun TemplateSheet(
     onSelect: (Template) -> Unit,
     onDelete: (Template) -> Unit,
     onCreate: () -> Unit,
-    onOpenWatermarkSettings: () -> Unit,
     onDismiss: () -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -996,34 +991,6 @@ private fun TemplateSheet(
                             )
                         }
                     }
-                }
-            }
-            Spacer(Modifier.height(10.dp))
-            Surface(
-                shape = RoundedCornerShape(10.dp),
-                color = Color.White.copy(alpha = 0.08f),
-                modifier = Modifier.fillMaxWidth().clickable { onOpenWatermarkSettings() }
-            ) {
-                Row(
-                    Modifier.padding(horizontal = 12.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        Icons.Default.Tune,
-                        contentDescription = null,
-                        tint = BrandColors.Primary,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text("水印设置", color = BrandColors.TextPrimary, fontSize = 13.sp)
-                        Text(
-                            "样式 / 底色 / 透明度 / 文字颜色 / logo / 字段",
-                            color = BrandColors.TextSecondary,
-                            fontSize = 11.sp
-                        )
-                    }
-                    Text("修改", color = BrandColors.Primary, fontSize = 12.sp)
                 }
             }
             Spacer(Modifier.height(8.dp))
