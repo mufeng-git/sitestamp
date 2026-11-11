@@ -202,7 +202,7 @@ object WatermarkRenderer {
         val footH = cardW * 0.082f
         val rowH = cardW * 0.085f
         val padIn = cardW * 0.030f
-        val radius = cardW * 0.020f
+        val radius = cardW * 0.028f
 
         val titleS = headerH * 0.46f
         // 标签与值同字号同基线，整块才能"一条线"对齐
@@ -291,14 +291,21 @@ object WatermarkRenderer {
 
         drawLogoBox(canvas, marginX, cardTop, logoBox, headerH, data.logo)
 
-        // ---- 标题
+        // ---- 标题（超长自动缩字号，右侧永远留出 padIn，不贴边不裁字）
         val text = Paint(Paint.ANTI_ALIAS_FLAG)
-        text.textSize = titleS
         text.typeface = boldFace
         text.color = headInk
+        val projectTitle = data.projectName.trim()
+        val titleMaxW = cardRight - contentX - padIn * 1.8f
+        var drawTitleS = titleS
+        text.textSize = drawTitleS
+        while (text.measureText(projectTitle) > titleMaxW && drawTitleS > titleS * 0.55f) {
+            drawTitleS *= 0.94f
+            text.textSize = drawTitleS
+        }
         canvas.drawText(
-            data.projectName.trim(), contentX,
-            cardTop + headerH / 2f + titleS * 0.36f, text
+            projectTitle, contentX,
+            cardTop + headerH / 2f + drawTitleS * 0.36f, text
         )
 
         // ---- 字段区
@@ -870,7 +877,7 @@ object WatermarkRenderer {
                 break
             }
             if (last <= start) last = max(start + 1, end - 1)
-            out.add(text.substring(start, last))
+            out.add(text.substring(start, last).trim())
             start = last
             if (out.size > 12) break
         }

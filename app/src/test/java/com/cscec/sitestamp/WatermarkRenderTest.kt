@@ -13,6 +13,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
 import java.io.File
 import java.io.FileOutputStream
 
@@ -22,6 +23,7 @@ import java.io.FileOutputStream
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33], qualifiers = "zh-rCN-w1080dp-h1440dp-xxhdpi")
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
 class WatermarkRenderTest {
 
     private fun loadFont(): Typeface? {
@@ -118,10 +120,13 @@ class WatermarkRenderTest {
             Canvas(composed).drawBitmap(overlay, 0f, 0f, null)
             val file = File(outDir, "style_${style}_${names[style]}.png")
             FileOutputStream(file).use { composed.compress(Bitmap.CompressFormat.PNG, 100, it) }
+            // 校验：整张图不能是纯黑（Robolectric 图形没启用时会静默出黑图）
+            val probe = composed.getPixel(w / 2, h / 2)
+            require(probe != Color.BLACK) { "style $style 渲染为纯黑，图形模式未生效" }
             overlay.recycle()
             composed.recycle()
             produced++
-            println("rendered -> ${file.absolutePath} (${file.length()} bytes)")
+            println("rendered -> ${file.absolutePath} (${file.length()} bytes, center=${Integer.toHexString(probe)})")
         }
         base.recycle()
         assertTrue("应渲染出 5 张样张，实际 $produced", produced == 5)
