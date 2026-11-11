@@ -1,0 +1,59 @@
+app_module: "WatermarkCameraEngine"
+version: "1.0.0"
+orientation: "portrait_fixed"
+
+view_hierarchy:
+  layer_0_hardware_preview:
+    component: "CameraPreviewView"
+    aspect_ratio: "16:9"
+    gestures: ["pinch_zoom", "tap_to_focus"]
+  layer_10_interactive_canvas:
+    component: "WatermarkCompositeCard"
+    anchor: "BOTTOM_LEFT"
+    draggable: true
+    haptic_snap_to_corners: true
+    theme:
+      background_color: "rgba(0, 0, 0, 0.55)"
+      corner_radius: 8
+      padding: [8, 12, 8, 12]
+      font_family: "system_sans"
+      text_color_primary: "#FFFFFF"
+      text_color_secondary: "#E0E0E0"
+  layer_20_hud_controls:
+    top_bar:
+      height: 48
+      elements: ["btn_close", "btn_flash_toggle", "btn_grid", "btn_template_manager"]
+    bottom_deck:
+      height: 120
+      elements:
+        - id: "gallery_thumbnail"
+          action: "OPEN_ALBUM"
+        - id: "shutter_button"
+          action: "CAPTURE_AND_COMPOSITE"
+        - id: "quick_edit_trigger"
+          action: "TOGGLE_FIELD_DRAWER"
+
+watermark_card_structure:
+  section_header:
+    logo_slot: { id: "f_logo", type: "IMAGE_ASSET", max_height_dp: 32,
+                 pipeline: ["AUTO_REMOVE_WHITE_BG", "BOUNDING_BOX_TRIM", "MONOCHROME_OPTIONAL"] }
+    company_name: { id: "f_company", type: "STICKY_TEXT", max_chars: 30 }
+    project_name: { id: "f_project", type: "STICKY_TEXT" }
+  section_body:
+    task_category: { id: "f_matter", type: "ENUM_BADGE", default: "质量验收",
+                     options: ["安全巡检", "质量验收", "工序交接", "节前排查", "物资进场", "日常施工"] }
+    construction_content: { id: "f_content", type: "INPUT_WITH_TAGS",
+                            quick_chips: ["基坑支护", "梁板钢筋绑扎", "混凝土浇筑", "模板支撑体系", "临电巡查"] }
+  section_footer:
+    geolocation: { id: "f_location", type: "GEO_PROVIDER",
+                   fields_format: "{address_line} ({lat_short}, {lng_short})" }
+    meteorology_and_time: { id: "f_weather_time", type: "AUTO_GENERATED", tamper_proof: true,
+                            fields: { timestamp: "YYYY-MM-DD HH:mm:ss",
+                                      weather_api: "{weather_condition} {temperature}°C {wind_direction}{wind_level}" } }
+
+cache_policy:
+  sticky_retention: ["f_logo", "f_company", "f_project", "f_matter_last_selected"]
+
+render_pipeline:
+  trigger: "ON_SHUTTER_RELEASE"
+  steps: ["capture_raw", "render_vector_overlay", "blend_composite", "exif_injection", "save"]
