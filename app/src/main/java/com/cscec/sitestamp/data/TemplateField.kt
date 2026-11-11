@@ -13,5 +13,7 @@ data class TemplateField(
     val fieldType: String = "text", // text | select | date
     val options: String? = null,   // select 时逗号分隔
     val isVisible: Boolean = true,
-    val sortOrder: Int = 0
+    val sortOrder: Int = 0,
+    val contractKey: String? = null,
+    val isFixed: Boolean = false
 )
