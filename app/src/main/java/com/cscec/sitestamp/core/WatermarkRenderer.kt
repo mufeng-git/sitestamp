@@ -181,8 +181,8 @@ object WatermarkRenderer {
     private fun drawBlock(canvas: Canvas, w: Int, h: Int, data: WatermarkData) {
         // 尺寸全部按卡片宽度归一化：换画幅时版式比例不变
         val cardW = w * 0.68f
-        val marginX = w * 0.026f
-        val marginBottom = h * 0.026f
+        val marginX = w * 0.034f
+        val marginBottom = h * 0.030f
         val headerH = cardW * 0.145f
         val footH = cardW * 0.082f
         val rowH = cardW * 0.085f
@@ -237,7 +237,7 @@ object WatermarkRenderer {
             bodyContentH += rowH * lines.size
         }
 
-        val bodyH = padIn * 2f + bodyContentH
+        val bodyH = padIn * 2.5f + bodyContentH
         val cardH = headerH + bodyH + footH
         val cardRight = marginX + cardW
         val cardBottom = h - marginBottom
@@ -652,7 +652,7 @@ object WatermarkRenderer {
         val padV = h * 0.0190f
         val barW = w * 0.0072f
         val radius = w * 0.018f
-        val marginX = w * 0.026f
+        val marginX = w * 0.034f
         val marginBottom = h * 0.028f
         val maxCardW = w * 0.90f
         val contentX = marginX + padH + barW
