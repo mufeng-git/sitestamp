@@ -58,6 +58,21 @@ object WatermarkRenderer {
         val showCoords: Boolean = false
     )
 
+    /**
+     * 可注入字体。JVM 端（Robolectric 样张渲染）没有中文字体，必须由外部喂一个；
+     * App 内保持 null，走系统 sans-serif。
+     */
+    @Volatile
+    var customTypeface: Typeface? = null
+
+    private fun face(bold: Boolean): Typeface = customTypeface ?: Typeface.create(
+        if (bold) "sans-serif-medium" else "sans-serif",
+        if (bold) Typeface.BOLD else Typeface.NORMAL
+    )
+
+    private val boldFace: Typeface get() = face(true)
+    private val normalFace: Typeface get() = face(false)
+
     private const val DEFAULT_BRAND = 0xFF2F7BF6.toInt()
 
     /** 三段式（蓝标题条 / 字段区 / 蓝落款 + logo 竖栏），默认样式。 */
@@ -195,8 +210,8 @@ object WatermarkRenderer {
         val labelS = bodyS
         val footS = footH * 0.50f
 
-        val boldFace = Typeface.create("sans-serif-medium", Typeface.BOLD)
-        val normalFace = Typeface.create("sans-serif", Typeface.NORMAL)
+        val boldFace = face(true)
+        val normalFace = face(false)
         val measure = Paint(Paint.ANTI_ALIAS_FLAG)
 
         // ---- 行内容
@@ -423,8 +438,8 @@ object WatermarkRenderer {
 
         val ink = inkOn(data.bgArgb, data.textColor)
         val sub = secondaryOn(ink)
-        val boldFace = Typeface.create("sans-serif-medium", Typeface.BOLD)
-        val normalFace = Typeface.create("sans-serif", Typeface.NORMAL)
+        val boldFace = face(true)
+        val normalFace = face(false)
         val measure = Paint(Paint.ANTI_ALIAS_FLAG)
 
         val rows = ArrayList<Pair<String, String>>()
@@ -519,8 +534,8 @@ object WatermarkRenderer {
         val timeS = h * 0.043f
         val subS = h * 0.017f
         var padX = w * 0.045f
-        val boldFace = Typeface.create("sans-serif-medium", Typeface.BOLD)
-        val normalFace = Typeface.create("sans-serif", Typeface.NORMAL)
+        val boldFace = face(true)
+        val normalFace = face(false)
 
         val barBadge = barH * 0.40f
         if (data.logo != null) {
@@ -574,8 +589,8 @@ object WatermarkRenderer {
         val s2 = unit * 0.82f
         val ink = inkOn(data.bgArgb, data.textColor)
         val sub = secondaryOn(ink)
-        val boldFace = Typeface.create("sans-serif-medium", Typeface.BOLD)
-        val normalFace = Typeface.create("sans-serif", Typeface.NORMAL)
+        val boldFace = face(true)
+        val normalFace = face(false)
         val measure = Paint(Paint.ANTI_ALIAS_FLAG)
 
         val line1 = buildString {
@@ -659,9 +674,9 @@ object WatermarkRenderer {
         val contentX = marginX + padH + barW
         val textMaxW = maxCardW - (contentX - marginX) - padH
 
-        val boldFace = Typeface.create("sans-serif-medium", Typeface.BOLD)
-        val mediumFace = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-        val normalFace = Typeface.create("sans-serif", Typeface.NORMAL)
+        val boldFace = face(true)
+        val mediumFace = face(false)
+        val normalFace = face(false)
 
         val measure = Paint(Paint.ANTI_ALIAS_FLAG)
 

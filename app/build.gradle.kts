@@ -72,6 +72,8 @@ android {
             // 纯逻辑单测直接跑在 JVM 上。WatermarkRenderer 是 object，初始化时会调用
             // android.graphics.Color 等 framework 方法，未 mock 时需要返回默认值。
             isReturnDefaultValues = true
+            // Robolectric 渲染水印样张需要真实资源与 native graphics
+            isIncludeAndroidResources = true
         }
     }
 }
@@ -100,4 +102,5 @@ dependencies {
     implementation("androidx.exifinterface:exifinterface:1.3.7")
 
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.robolectric:robolectric:4.14.1")
 }
